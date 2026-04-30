@@ -3,12 +3,15 @@ from PIL import Image
 import io
 import base64
 import os
+from dotenv import load_dotenv
 from openai import OpenAI
 from pdf2image import convert_from_bytes
 
+# Load environment variables
+load_dotenv()
+
 # Initialize OpenAI client 
-# For production, ensure OPENAI_API_KEY is in your environment variables.
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "dummy-key-for-local-testing"))
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 import re
 from nltk.corpus import wordnet, stopwords

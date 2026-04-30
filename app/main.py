@@ -1,4 +1,9 @@
 from fastapi import FastAPI
+from dotenv import load_dotenv
+import os
+
+# Load environment variables
+load_dotenv()
 from app.routes import ocr, similarity, grading
 from app.services.segmentation_service import segment_answers
 from app.models.request_models import SegmentRequest
