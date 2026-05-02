@@ -1,5 +1,5 @@
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
+from app.services.embeddings import cosine_similarity
+from app.config.constants import SIMILARITY_FULL, SIMILARITY_PARTIAL
 
 def calculate_similarity(student_answer_emb: list, rubric_embs: list) -> list:
     """
@@ -10,27 +10,25 @@ def calculate_similarity(student_answer_emb: list, rubric_embs: list) -> list:
     if not rubric_embs:
         return []
         
-    student_emb_array = np.array(student_answer_emb).reshape(1, -1)
-    rubric_embs_array = np.array(rubric_embs)
+    similarities = []
+    for rubric_emb in rubric_embs:
+        similarity = cosine_similarity(student_answer_emb, rubric_emb)
+        similarities.append(similarity)
     
-    similarities = cosine_similarity(student_emb_array, rubric_embs_array)[0]
-    return similarities.tolist()
+    return similarities
 
 def threshold_score(similarity: float) -> float:
     """
     Applies the threshold function to convert a raw cosine similarity to a discrete score.
     Returns:
-     - 1.0 if similarity >= 0.85
-     - 0.7 if similarity >= 0.70
-     - 0.4 if similarity >= 0.50
+     - 1.0 if similarity >= SIMILARITY_FULL
+     - 0.5 if similarity >= SIMILARITY_PARTIAL
      - 0.0 otherwise
     """
-    if similarity >= 0.85:
+    if similarity >= SIMILARITY_FULL:
         return 1.0
-    elif similarity >= 0.70:
-        return 0.7
-    elif similarity >= 0.50:
-        return 0.4
+    elif similarity >= SIMILARITY_PARTIAL:
+        return 0.5
     else:
         return 0.0
 

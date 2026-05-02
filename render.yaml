@@ -8,5 +8,7 @@ services:
     envVars:
       - key: PORT
         value: 8000
+      - key: OPENAI_API_KEY
+        sync: false
     healthCheckPath: /
     autoDeploy: true
