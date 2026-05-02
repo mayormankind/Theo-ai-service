@@ -4,7 +4,7 @@ import os
 
 # Load environment variables
 load_dotenv()
-from app.routes import ocr, similarity, grading
+from app.routes import ocr, similarity, grading, rubric_extraction
 from app.services.segmentation_service import segment_answers
 from app.models.request_models import SegmentRequest
 
@@ -18,6 +18,7 @@ app = FastAPI(
 app.include_router(ocr.router, tags=["OCR"])
 app.include_router(similarity.router, tags=["Similarity"])
 app.include_router(grading.router, tags=["Grading Pipeline"])
+app.include_router(rubric_extraction.router, tags=["Rubric Extraction"])
 
 @app.get("/", tags=["Health"])
 def health_check():
