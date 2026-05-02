@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: ai-service
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash start.sh
+    envVars:
+      - key: PORT
+        value: 8000
+    healthCheckPath: /
+    autoDeploy: true

@@ -4,6 +4,9 @@ import os
 
 # Load environment variables
 load_dotenv()
+
+# Get port from environment or default to 8000
+port = int(os.getenv("PORT", 8000))
 from app.routes import ocr, similarity, grading, rubric_extraction
 from app.services.segmentation_service import segment_answers
 from app.models.request_models import SegmentRequest
