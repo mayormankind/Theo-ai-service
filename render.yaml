@@ -3,7 +3,7 @@ services:
     name: ai-service
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-eng libgl1 poppler-utils && pip install -r requirements.txt
     startCommand: bash start.sh
     envVars:
       - key: PORT
