@@ -1,9 +1,19 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
+import nltk
 
 # Load environment variables
 load_dotenv()
+
+# Download necessary NLTK data
+try:
+    nltk.download('wordnet', quiet=True)
+    nltk.download('stopwords', quiet=True)
+    nltk.download('omw-1.4', quiet=True)
+except Exception as e:
+    print(f"Warning: Failed to download NLTK data: {e}")
 
 # Get port from environment or default to 8000
 port = int(os.getenv("PORT", 8000))
@@ -13,8 +23,17 @@ from app.models.request_models import SegmentRequest
 
 app = FastAPI(
     title="Intelligent Assessment System API",
-    description="Automated Grading of Theoretical Examination Scripts in Nigerian Universities using Sentence-BERT.",
+    description="Automated Grading of Theoretical Examination Scripts in Nigerian Universities using Sentence-BERT (OpenAI fallback).",
     version="1.0.0"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify the exact frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Attach Modular Routers
@@ -37,3 +56,4 @@ def segment_endpoint(req: SegmentRequest):
     """
     segments = segment_answers(req.raw_text)
     return segments
+
