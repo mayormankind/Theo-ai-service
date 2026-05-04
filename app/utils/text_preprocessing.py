@@ -5,6 +5,20 @@ from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
 
+def clean_ocr_output(raw: str) -> str:
+    """
+    Strips GPT-4 Vision conversational preambles and markdown fences
+    from OCR output before downstream processing.
+    """
+    # Remove leading conversational sentences up to and including first colon+newline
+    raw = re.sub(r'^.*?(?:structure|follows|text)[^:]*:\s*\n+', '', raw, flags=re.IGNORECASE | re.DOTALL)
+
+    # Strip markdown code fences  (``` or ```)
+    raw = re.sub(r'```[a-z]*\n?', '', raw)
+
+    # Strip leading/trailing whitespace
+    return raw.strip()
+
 def extract_student_id(text: str) -> str:
     """
     Attempts to extract a Nigerian University Matriculation Number or Student ID

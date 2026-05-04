@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 from pdf2image import convert_from_bytes
+from app.utils.text_preprocessing import clean_ocr_output
 
 # Load environment variables
 load_dotenv()
@@ -78,7 +79,7 @@ def extract_text_with_gpt4(image_bytes: bytes) -> str:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Extract all readable handwritten text from this examination script. Preserve structure where possible. Ignore illegible parts."},
+                        {"type": "text", "text": "Extract all readable handwritten text from this examination script. Return ONLY the raw extracted text with no preamble, no commentary and no markdown formatting. Preserve the original structure."},
                         {
                             "type": "image_url",
                             "image_url": {
