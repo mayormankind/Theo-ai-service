@@ -79,7 +79,7 @@ def extract_text_with_gpt4(image_bytes: bytes) -> str:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Extract all readable handwritten text from this examination script. Return ONLY the raw extracted text with no preamble, no commentary and no markdown formatting. Preserve the original structure."},
+                        {"type": "text", "text": "Extract all readable handwritten text from this examination script. CRITICAL: Return ONLY the raw extracted text with ABSOLUTELY NO preamble, NO introductory sentences, NO commentary, NO explanations, and NO markdown formatting (no ``` fences). Start immediately with the first word from the document. Preserve the original structure and line breaks."},
                         {
                             "type": "image_url",
                             "image_url": {
@@ -145,6 +145,10 @@ def extract_text_hybrid(file_bytes: bytes, filename: str = "image.jpg") -> dict:
                 # Step 4: AI Fallback
                 all_acceptable = False
                 gpt_text = extract_text_with_gpt4(img_bytes)
+                
+                # Clean GPT-4 output to remove conversational preambles
+                if gpt_text:
+                    gpt_text = clean_ocr_output(gpt_text)
                 
                 # Step 5: Replace with GPT-4 output
                 # Fallback to tesseract text if GPT fails to return anything
