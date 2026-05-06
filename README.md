@@ -1,4 +1,4 @@
-# Intelligent Assessment System API
+# TheoGrader AI Service API
 
 This is a microservice developed for the Final Year Project: "Design and Development of an Intelligent Assessment System for Automated Grading of Theoretical Examination Scripts in Nigerian Universities."
 

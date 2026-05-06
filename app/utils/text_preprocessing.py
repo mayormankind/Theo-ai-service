@@ -22,10 +22,11 @@ def clean_ocr_output(raw: str) -> str:
 def extract_student_id(text: str) -> str:
     """
     Attempts to extract a Nigerian University Matriculation Number or Student ID
-    from the raw OCR text. Typical formats: 21/04CS023, 19/MAC/011, etc.
+    from the raw OCR text. Typical formats: 21/04CS023, 19/MAC/011, IFS/20/4986, etc.
     """
     # Regex for standard matric numbers: optional prefix, digits/letters separated by slashes
-    pattern = re.compile(r'(?i)(?:matric|id|no\.?)?\s*[:\-]*\s*([0-9]{2,4}/[a-z]{2,5}/[0-9]{3,4}|[0-9]{2}/[a-z0-9]+)')
+    # Updated pattern to include department prefixes like "IFS", "CSC", etc.
+    pattern = re.compile(r'(?i)(?:matric|id|no\.?)?\s*[:\-]*\s*((?:[a-z]{2,5}/)?[0-9]{2,4}/[a-z]{2,5}/[0-9]{3,4}|[a-z]{2,5}/[0-9]{2}/[0-9]{3,4}|[0-9]{2}/[a-z0-9]+)')
     match = pattern.search(text)
     if match:
         return match.group(1).upper()

@@ -47,7 +47,7 @@ def health_check():
     """
     Root health check endpoint.
     """
-    return {"status": "ok", "message": "Intelligent Assessment System API is running."}
+    return {"status": "ok", "message": "TheoGrader AI Service API is running."}
 
 @app.post("/segment", tags=["Segmentation"])
 def segment_endpoint(req: SegmentRequest):

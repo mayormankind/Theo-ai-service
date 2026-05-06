@@ -1,6 +1,6 @@
 # System Enhancements Report
 
-**Project:** Intelligent Assessment System (AI Service)  
+**Project:** TheoGrader (AI Service)  
 **Date:** April 2026  
 **Goal:** Address performance bottlenecks, enable batch processing, and introduce intelligent fallbacks to ensure smooth, robust operation in production environments.
 

@@ -1,8 +1,8 @@
-# Intelligent Assessment System – Project Context
+# TheoGrader – Project Context
 
 ## 📌 Project Title
 
-Design and Development of an Intelligent Assessment System for Automated Grading of Theoretical Examination Scripts in Nigerian Universities
+TheoGrader — Design and Development of an Intelligent Assessment System for Automated Grading of Theoretical Examination Scripts in Nigerian Universities
 
 ---
 
