@@ -49,6 +49,10 @@ def health_check():
     """
     return {"status": "ok", "message": "TheoGrader AI Service API is running."}
 
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["Health"])
+def health():
+    return {"ok": True}
+    
 @app.post("/segment", tags=["Segmentation"])
 def segment_endpoint(req: SegmentRequest):
     """
@@ -56,4 +60,3 @@ def segment_endpoint(req: SegmentRequest):
     """
     segments = segment_answers(req.raw_text)
     return segments
-
