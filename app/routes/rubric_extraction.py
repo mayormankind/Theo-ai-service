@@ -120,6 +120,12 @@ Guidelines:
     # Validate and structure the response
     extracted_rubric = ExtractedRubric(**rubric_data)
     
+    # Ensure all parts have labels
+    for q in extracted_rubric.questions:
+        for idx, part in enumerate(q.parts):
+            if not part.get("label"):
+                part["label"] = chr(97 + idx)  # a, b, c, etc.
+    
     return ExtractionResult(
         success=True,
         rubric=extracted_rubric,
@@ -247,6 +253,12 @@ Guidelines:
 
             extracted_rubric = ExtractedRubric(**rubric_data)
             
+            # Ensure all parts have labels
+            for q in extracted_rubric.questions:
+                for idx, part in enumerate(q.parts):
+                    if not part.get("label"):
+                        part["label"] = String.fromCharCode(97 + idx)  # a, b, c, etc.
+            
             return ExtractionResult(
                 success=True,
                 rubric=extracted_rubric,
@@ -357,6 +369,12 @@ Guidelines:
 
         # Validate and structure the response
         extracted_rubric = ExtractedRubric(**rubric_data)
+        
+        # Ensure all parts have labels
+        for q in extracted_rubric.questions:
+            for idx, part in enumerate(q.parts):
+                if not part.get("label"):
+                    part["label"] = String.fromCharCode(97 + idx)  # a, b, c, etc.
         
         return ExtractionResult(
             success=True,
