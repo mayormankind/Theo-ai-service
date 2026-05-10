@@ -60,8 +60,9 @@ def evaluate_ocr_quality(text: str) -> bool:
             
     lexical_ratio = valid_words_count / len(words)
     
-    # If less than 60% of extracted words are real English words, reject the output.
-    if lexical_ratio < 0.60:
+    # If less than 30% of extracted words are real English words, reject the output.
+    # Lowered threshold for handwritten documents which often have lower OCR quality
+    if lexical_ratio < 0.30:
         print(f"[OCR] Quality rejected. Lexical validity ratio too low: {lexical_ratio:.2f}")
         return False
         
