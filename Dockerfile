@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
 # Set working directory
 WORKDIR /app
 
@@ -22,6 +23,10 @@ COPY . .
 
 # Expose port
 EXPOSE 8000
+
+# Environment variables (override at runtime)
+ENV REDIS_URL=redis://redis:6379/0
+ENV BATCH_CONCURRENCY=5
 
 # Start command
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

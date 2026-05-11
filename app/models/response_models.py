@@ -10,12 +10,3 @@ class QuestionResult(BaseModel):
 class GradeResponse(BaseModel):
     student_id: Optional[str] = "UNKNOWN"
     questions: List[QuestionResult]
-
-class BatchJobResponse(BaseModel):
-    job_id: str
-    message: str
-
-class BatchJobStatus(BaseModel):
-    job_id: str
-    status: str
-    results: List[GradeResponse] = []
