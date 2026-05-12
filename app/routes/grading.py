@@ -49,17 +49,30 @@ async def grade_endpoint(
             
         clean_student_answer = preprocess_text(answer_text)
         
-        matched_rubric_key = next((k for k in rubric_data.keys() if k.lower().strip() == question.lower().strip()), None)
+        # Normalization for matching (e.g. "Question 1" vs "Q1")
+        def normalize(s):
+            return s.lower().replace(" ", "").replace("question", "").replace("q", "")
+            
+        target = normalize(question)
+        matched_rubric_key = next((k for k in rubric_data.keys() if normalize(k) == target), None)
+        
         if not matched_rubric_key:
-            results.append(QuestionResult(question=question, score=0.0, confidence=0.0, breakdown=[]))
+            results.append(QuestionResult(
+                question=question, score=0.0, confidence=0.0, breakdown=[],
+                matched_concepts=[], missing_concepts=[]
+            ))
             continue
             
         rubrics_for_q = rubric_data[matched_rubric_key]
-        rubric_texts = [preprocess_text(item['point']) for item in rubrics_for_q]
+        rubric_points_raw = [item['point'] for item in rubrics_for_q]
+        rubric_texts = [preprocess_text(p) for p in rubric_points_raw]
         rubric_weights = [item.get('weight', 1.0) for item in rubrics_for_q]
         
         if not rubric_texts:
-            results.append(QuestionResult(question=question, score=0.0, confidence=0.0, breakdown=[]))
+            results.append(QuestionResult(
+                question=question, score=0.0, confidence=0.0, breakdown=[],
+                matched_concepts=[], missing_concepts=[]
+            ))
             continue
             
         # Get embeddings concurrently
@@ -69,6 +82,17 @@ async def grade_endpoint(
         similarities = await run_in_threadpool(calculate_similarity, student_emb, rubric_embs)
         final_score, confidence = calculate_final_score(similarities, rubric_weights)
         
-        results.append(QuestionResult(question=question, score=final_score, confidence=confidence, breakdown=similarities))
+        # Determine matched and missing concepts based on a threshold (e.g. 0.6)
+        matched = [rubric_points_raw[i] for i, s in enumerate(similarities) if s >= 0.6]
+        missing = [rubric_points_raw[i] for i, s in enumerate(similarities) if s < 0.6]
+        
+        results.append(QuestionResult(
+            question=question, 
+            score=final_score, 
+            confidence=confidence, 
+            breakdown=similarities,
+            matched_concepts=matched,
+            missing_concepts=missing
+        ))
 
     return GradeResponse(student_id=student_id, questions=results)
