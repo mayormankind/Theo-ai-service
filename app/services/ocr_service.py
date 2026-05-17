@@ -1,3 +1,4 @@
+# src/ai-service/app/services/ocr_service.py
 import pytesseract
 from PIL import Image
 import io

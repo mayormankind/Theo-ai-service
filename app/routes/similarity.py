@@ -1,3 +1,4 @@
+# src/ai-service/app/routes/similarity.py
 from fastapi import APIRouter
 from app.models.request_models import SimilarityRequest
 from app.services.embedding_service import get_embeddings

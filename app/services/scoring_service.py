@@ -1,3 +1,4 @@
+# src/ai-service/app/services/scoring_service.py
 from app.services.embeddings import cosine_similarity
 from app.config.constants import SIMILARITY_FULL, SIMILARITY_PARTIAL
 

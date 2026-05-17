@@ -1,3 +1,4 @@
+# src/ai-service/app/services/embeddings.py
 import os
 import numpy as np
 from openai import OpenAI

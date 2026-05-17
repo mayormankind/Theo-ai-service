@@ -24,9 +24,5 @@ COPY . .
 # Expose port
 EXPOSE 8000
 
-# Environment variables (override at runtime)
-ENV REDIS_URL=redis://redis:6379/0
-ENV BATCH_CONCURRENCY=5
-
 # Start command
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

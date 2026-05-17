@@ -1,3 +1,4 @@
+# src/ai-service/app/routes/rubric_extraction.py
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
@@ -257,7 +258,7 @@ Guidelines:
             for q in extracted_rubric.questions:
                 for idx, part in enumerate(q.parts):
                     if not part.get("label"):
-                        part["label"] = String.fromCharCode(97 + idx)  # a, b, c, etc.
+                        part["label"] = chr(97 + idx)  # a, b, c, etc.
             
             return ExtractionResult(
                 success=True,
@@ -374,7 +375,7 @@ Guidelines:
         for q in extracted_rubric.questions:
             for idx, part in enumerate(q.parts):
                 if not part.get("label"):
-                    part["label"] = String.fromCharCode(97 + idx)  # a, b, c, etc.
+                    part["label"] = chr(97 + idx)  # a, b, c, etc.
         
         return ExtractionResult(
             success=True,
