@@ -47,16 +47,30 @@ def evaluate_ocr_quality(text: str) -> bool:
         
     # 3. Dictionary Validation (Lexical Check)
     # Tesseract often produces valid alphanumeric strings that are complete gibberish
-    # e.g., "ACCocding te te Conmilee". We evaluate the percentage of real English words.
     words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
     
     if not words:
         return False
         
     valid_words_count = 0
+    ACADEMIC_TERMS = {
+        'plagiarism', 'academic', 'university', 'examination',
+        'according', 'however', 'therefore', 'furthermore',
+        'nigeria', 'federal', 'cope', 'ieee', 'apa', 'mla',
+        'citation', 'reference', 'bibliography', 'hypothesis',
+        'methodology', 'analysis', 'conclusion', 'introduction',
+        'definition', 'explanation', 'describe', 'discuss',
+        'evaluate', 'compare', 'contrast', 'explain', 'state',
+        'outline', 'identify', 'distinguish', 'illustrate',
+        'futa', 'unilag', 'uniben', 'abu', 'oau', 'eksu',
+        'matric', 'coursework', 'semester', 'department',
+        'lecturer', 'professor', 'student', 'faculty'
+    }
     for word in words:
         # Check against stop words or WordNet dictionary
-        if word in STOP_WORDS or wordnet.synsets(word):
+        if (word in STOP_WORDS or 
+            word in ACADEMIC_TERMS or 
+            wordnet.synsets(word)):
             valid_words_count += 1
             
     lexical_ratio = valid_words_count / len(words)
@@ -76,7 +90,7 @@ def extract_text_with_gpt4(image_bytes: bytes) -> str:
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[
                 {
                     "role": "user",

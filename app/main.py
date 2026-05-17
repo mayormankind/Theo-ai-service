@@ -24,7 +24,7 @@ from app.models.request_models import SegmentRequest
 
 app = FastAPI(
     title="Intelligent Assessment System API",
-    description="Automated Grading of Theoretical Examination Scripts in Nigerian Universities using Sentence-BERT (OpenAI fallback).",
+    description="Automated Grading of Theoretical Examination Scripts in Nigerian Universities using OpenAI Embeddings (text-embedding-3-small) for semantic similarity scoring.",
     version="1.0.0"
 )
 

@@ -7,8 +7,6 @@ services:
       - "8000:8000"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - REDIS_URL=redis://redis:6379/0
-      - BATCH_CONCURRENCY=5
     depends_on:
       redis:
         condition: service_healthy

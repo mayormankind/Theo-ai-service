@@ -1,5 +1,6 @@
 # src/ai-service/app/routes/grading.py
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from typing import Optional, List
 import json
 import os
 from fastapi.concurrency import run_in_threadpool
@@ -16,8 +17,9 @@ router = APIRouter()
 
 @router.post("/grade", response_model=GradeResponse)
 async def grade_endpoint(
-    file: UploadFile = File(...),
-    rubric_str: str = Form(..., description="JSON string of rubric points with weights")
+    rubric_str: str = Form(...),
+    file: Optional[UploadFile] = File(None),
+    extracted_text: Optional[str] = Form(None),
 ):
     """
     Single script grading pipeline.
@@ -25,19 +27,35 @@ async def grade_endpoint(
     try:
         rubric_data = json.loads(rubric_str)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid rubric JSON format")
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid rubric JSON format"
+        )
 
-    # Step 1: OCR - Run in threadpool to free event loop!
-    image_bytes = await file.read()
-    filename = file.filename or "image.jpg"
-    ocr_result = await run_in_threadpool(extract_text_hybrid, image_bytes, filename)
-    raw_text = ocr_result.get("extracted_text", "")
-    
+    # Use pre-extracted text if provided, 
+    # otherwise run OCR on the file
+    if extracted_text and extracted_text.strip():
+        raw_text = extracted_text.strip()
+        student_id = extract_student_id(raw_text)
+    elif file:
+        image_bytes = await file.read()
+        filename = file.filename or "image.jpg"
+        ocr_result = await run_in_threadpool(
+            extract_text_hybrid, image_bytes, filename
+        )
+        raw_text = ocr_result.get("extracted_text", "")
+        student_id = extract_student_id(raw_text)
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Either file or extracted_text required"
+        )
+
     if not raw_text:
-        return GradeResponse(student_id="UNKNOWN", questions=[])
+        return GradeResponse(
+            student_id="UNKNOWN", questions=[]
+        )
         
-    student_id = extract_student_id(raw_text)
-    
     # Step 2: Segmentation
     segmented_answers = segment_answers(raw_text)
     
@@ -48,7 +66,7 @@ async def grade_endpoint(
             results.append(QuestionResult(question=question, score=0.0, confidence=0.0, breakdown=[]))
             continue
             
-        clean_student_answer = preprocess_text(answer_text)
+        clean_student_answer = answer_text.strip()
         
         # Normalization for matching (e.g. "Question 1" vs "Q1")
         def normalize(s):
@@ -66,7 +84,7 @@ async def grade_endpoint(
             
         rubrics_for_q = rubric_data[matched_rubric_key]
         rubric_points_raw = [item['point'] for item in rubrics_for_q]
-        rubric_texts = [preprocess_text(p) for p in rubric_points_raw]
+        rubric_texts = [p.strip() for p in rubric_points_raw]
         rubric_weights = [item.get('weight', 1.0) for item in rubrics_for_q]
         
         if not rubric_texts:
@@ -83,16 +101,29 @@ async def grade_endpoint(
         similarities = await run_in_threadpool(calculate_similarity, student_emb, rubric_embs)
         final_score, confidence = calculate_final_score(similarities, rubric_weights)
         
-        # Determine matched and missing concepts based on a threshold (e.g. 0.6)
-        matched = [rubric_points_raw[i] for i, s in enumerate(similarities) if s >= 0.6]
-        missing = [rubric_points_raw[i] for i, s in enumerate(similarities) if s < 0.6]
+        # Determine matched, partial and missing concepts based on aligned thresholds
+        from app.config.constants import (
+            SIMILARITY_FULL, SIMILARITY_PARTIAL
+        )
+        
+        matched = [rubric_points_raw[i] for i, s in 
+                   enumerate(similarities) 
+                   if s >= SIMILARITY_FULL]
+        partial = [rubric_points_raw[i] for i, s in 
+                   enumerate(similarities) 
+                   if SIMILARITY_PARTIAL <= s < SIMILARITY_FULL]
+        missing = [rubric_points_raw[i] for i, s in 
+                   enumerate(similarities) 
+                   if s < SIMILARITY_PARTIAL]
         
         results.append(QuestionResult(
-            question=question, 
-            score=final_score, 
-            confidence=confidence, 
+            question=question,
+            answer=answer_text.strip(),
+            score=final_score,
+            confidence=confidence,
             breakdown=similarities,
             matched_concepts=matched,
+            partial_concepts=partial,
             missing_concepts=missing
         ))
 

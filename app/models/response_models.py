@@ -8,7 +8,9 @@ class QuestionResult(BaseModel):
     confidence: float
     breakdown: List[float]
     matched_concepts: List[str] = []
+    partial_concepts: List[str] = []
     missing_concepts: List[str] = []
+    answer: Optional[str] = ""
 
 class GradeResponse(BaseModel):
     student_id: Optional[str] = "UNKNOWN"
