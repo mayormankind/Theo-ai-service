@@ -21,6 +21,7 @@ port = int(os.getenv("PORT", 8000))
 from app.routes import ocr, similarity, grading, rubric_extraction
 from app.services.segmentation_service import segment_answers
 from app.models.request_models import SegmentRequest
+from app.routes.identity import router as identity_router
 
 app = FastAPI(
     title="Intelligent Assessment System API",
@@ -42,6 +43,7 @@ app.include_router(ocr.router, tags=["OCR"])
 app.include_router(similarity.router, tags=["Similarity"])
 app.include_router(grading.router, tags=["Grading Pipeline"])
 app.include_router(rubric_extraction.router, tags=["Rubric Extraction"])
+app.include_router(identity_router, tags=["Identity"])
 
 @app.get("/", tags=["Health"])
 def health_check():
