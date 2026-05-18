@@ -162,19 +162,23 @@ def extract_text_hybrid(
             extracted_pages.append(page_text)
         else:
             print(f"[OCR] Page {i + 1} returned no text")
-            # Insert a placeholder so the lecturer knows
-            # a page failed rather than silently losing it
+            # Insert a placeholder so the lecturer knows a page failed rather than silently losing it
             extracted_pages.append(
                 f"[PAGE {i + 1} EXTRACTION FAILED - "
                 f"please review original script]"
             )
 
     full_text = "\n\n".join(extracted_pages)
+    
+    any_page_failed = any(
+        "EXTRACTION FAILED" in p 
+        for p in extracted_pages
+    )
 
     confidence_flag = (
-        "acceptable" 
-        if full_text.strip() 
-        else "low_quality_fallback_used"
+        "low_quality_fallback_used"
+        if any_page_failed or not full_text.strip()
+        else "acceptable"
     )
 
     return {

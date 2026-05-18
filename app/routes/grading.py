@@ -87,6 +87,14 @@ async def grade_endpoint(
         rubric_texts = [p.strip() for p in rubric_points_raw]
         rubric_weights = [item.get('weight', 1.0) for item in rubrics_for_q]
         
+        # Get max marks for this question
+        # Prefer explicit maxScore field, fallback to sum 
+        # of point maxScores, fallback to 0
+        question_max = rubrics_for_q[0].get(
+            'questionMaxScore', 
+            sum(item.get('maxScore', 0) for item in rubrics_for_q)
+        )
+        
         if not rubric_texts:
             results.append(QuestionResult(
                 question=question, score=0.0, confidence=0.0, breakdown=[],
@@ -99,7 +107,16 @@ async def grade_endpoint(
         rubric_embs = await run_in_threadpool(get_embeddings, rubric_texts)
         
         similarities = await run_in_threadpool(calculate_similarity, student_emb, rubric_embs)
-        final_score, confidence = calculate_final_score(similarities, rubric_weights)
+        final_score, confidence = calculate_final_score(
+            similarities,
+            rubric_weights,
+            question_max_score=question_max
+        )
+        
+        print(f"[GRADE] Q:{question} | "
+              f"max:{question_max} | "
+              f"sim:{[round(s,2) for s in similarities]} | "
+              f"score:{final_score}")
         
         # Determine matched, partial and missing concepts based on aligned thresholds
         from app.config.constants import (

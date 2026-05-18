@@ -33,21 +33,49 @@ def threshold_score(similarity: float) -> float:
     else:
         return 0.0
 
-def calculate_final_score(similarities: list, weights: list) -> tuple:
+
+def calculate_final_score(
+    similarities: list,
+    weights: list,
+    question_max_score: float = 0.0
+) -> tuple:
     """
-    Given similarities for rubric points and their respective weights,
-    calculates the final accumulated score and the confidence level.
+    Calculates actual marks earned for a question.
     
-    Score = Σ (w_i × f(similarity_i))
-    Confidence = Average of raw similarity values
+    For single-entity rubric (one expected answer per 
+    question):
+      score = threshold_score(similarity) × max_marks
+    
+    For multi-point rubric (multiple weighted points):
+      score = sum(weight_ratio × max_marks × threshold)
+    
+    Returns (actual_marks_earned, confidence)
     """
-    if not similarities or not weights or len(similarities) != len(weights):
+    if not similarities or not weights:
         return 0.0, 0.0
-        
-    # Apply score thresholding function f() for each similarity to calculate the final sum
-    score = sum(w * threshold_score(s) for w, s in zip(weights, similarities))
-    
-    # Confidence is average of raw similarity values
+
     confidence = sum(similarities) / len(similarities)
-    
-    return score, confidence
+
+    if question_max_score <= 0:
+        # Fallback: return threshold value only
+        # (legacy behaviour, should not happen in practice)
+        score = sum(
+            w * threshold_score(s)
+            for w, s in zip(weights, similarities)
+        )
+        return round(score, 2), round(confidence, 4)
+
+    total_weight = sum(weights)
+    if total_weight == 0:
+        return 0.0, round(confidence, 4)
+
+    # Distribute max marks proportionally by weight
+    # For single entity: one weight of 1.0, so full 
+    # max_marks × threshold_score
+    score = sum(
+        (w / total_weight) * question_max_score 
+        * threshold_score(s)
+        for w, s in zip(weights, similarities)
+    )
+
+    return round(score, 2), round(confidence, 4)
