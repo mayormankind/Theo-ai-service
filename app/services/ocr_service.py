@@ -1,13 +1,11 @@
 # src/ai-service/app/services/ocr_service.py
-import pytesseract
-from PIL import Image
-import io
 import base64
+import io
 import os
-from dotenv import load_dotenv
 from openai import OpenAI
 from pdf2image import convert_from_bytes
-from app.utils.text_preprocessing import clean_ocr_output
+from dotenv import load_dotenv
+import re
 
 # Load environment variables
 load_dotenv()
@@ -15,178 +13,172 @@ load_dotenv()
 # Initialize OpenAI client 
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-import re
-from nltk.corpus import wordnet, stopwords
+TRANSCRIPTION_PROMPT = """You are a faithful transcription \
+assistant for handwritten university examination scripts.
 
-# Ensure we have common stop words loaded for basic word matching
-try:
-    STOP_WORDS = set(stopwords.words('english'))
-except Exception:
-    STOP_WORDS = set()
+Your task: Transcribe EXACTLY what is handwritten on this \
+examination script page.
 
-def evaluate_ocr_quality(text: str) -> bool:
-    """
-    Evaluates OCR output quality. 
-    Returns True if quality is acceptable, False if it needs AI fallback.
-    """
-    # 1. Text length threshold
-    if len(text.strip()) < 10:
-        return False
-        
-    # 2. Ratio of readable words to noise
-    # Calculate ratio of alphanumeric characters vs special/noise characters
-    alphanumeric_chars = sum(c.isalnum() or c.isspace() for c in text)
-    total_chars = len(text)
-    
-    if total_chars == 0:
-        return False
-        
-    noise_ratio = 1.0 - (alphanumeric_chars / total_chars)
-    if noise_ratio > 0.3:  # If more than 30% of text is noise
-        return False
-        
-    # 3. Dictionary Validation (Lexical Check)
-    # Tesseract often produces valid alphanumeric strings that are complete gibberish
-    words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
-    
-    if not words:
-        return False
-        
-    valid_words_count = 0
-    ACADEMIC_TERMS = {
-        'plagiarism', 'academic', 'university', 'examination',
-        'according', 'however', 'therefore', 'furthermore',
-        'nigeria', 'federal', 'cope', 'ieee', 'apa', 'mla',
-        'citation', 'reference', 'bibliography', 'hypothesis',
-        'methodology', 'analysis', 'conclusion', 'introduction',
-        'definition', 'explanation', 'describe', 'discuss',
-        'evaluate', 'compare', 'contrast', 'explain', 'state',
-        'outline', 'identify', 'distinguish', 'illustrate',
-        'futa', 'unilag', 'uniben', 'abu', 'oau', 'eksu',
-        'matric', 'coursework', 'semester', 'department',
-        'lecturer', 'professor', 'student', 'faculty'
-    }
-    for word in words:
-        # Check against stop words or WordNet dictionary
-        if (word in STOP_WORDS or 
-            word in ACADEMIC_TERMS or 
-            wordnet.synsets(word)):
-            valid_words_count += 1
-            
-    lexical_ratio = valid_words_count / len(words)
-    
-    # If less than 30% of extracted words are real English words, reject the output.
-    # Lowered threshold for handwritten documents which often have lower OCR quality
-    if lexical_ratio < 0.30:
-        print(f"[OCR] Quality rejected. Lexical validity ratio too low: {lexical_ratio:.2f}")
-        return False
-        
-    return True
+CRITICAL RULES:
+1. Copy the text VERBATIM as written — do not paraphrase, \
+   summarise, correct, or improve the student's writing
+2. If a word is unclear, make your best attempt to read it \
+   and transcribe it exactly as it appears — do not \
+   substitute a different word that seems to make more sense
+3. If text is completely illegible, write [illegible] in \
+   that position — do not guess
+4. Preserve structure: maintain line breaks, question \
+   numbers, and the order content appears on the page
+5. Do NOT add any commentary, explanations, or preamble
+6. Do NOT fix spelling or grammar errors — transcribe \
+   exactly what the student wrote, errors included
+7. Include ALL visible text: name, matric number, course \
+   code, date, question numbers, and all answers
 
-def extract_text_with_gpt4(image_bytes: bytes) -> str:
+Return ONLY the transcribed text. Nothing else."""
+
+
+def extract_student_id(text: str) -> str:
     """
-    Sends the image to GPT-4 Vision for text extraction.
+    Extracts Nigerian university matric number from text.
+    Handles formats: IFS/20/4986, CSC/21/1234, etc.
     """
-    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    pattern = re.compile(
+        r'(?i)(?:matric|id|no\.?)?\s*[:\-]*\s*'
+        r'((?:[a-z]{2,5}/)?[0-9]{2,4}/[a-z]{2,5}/[0-9]{3,4}'
+        r'|[a-z]{2,5}/[0-9]{2}/[0-9]{3,4}'
+        r'|[0-9]{2}/[a-z0-9]+)'
+    )
+    match = pattern.search(text)
+    if match:
+        return match.group(1).upper()
+    return "UNKNOWN"
+
+
+def image_bytes_to_base64(image_bytes: bytes) -> str:
+    """Convert raw image bytes to base64 string."""
+    return base64.b64encode(image_bytes).decode('utf-8')
+
+
+def extract_page_text(image_bytes: bytes) -> str:
+    """
+    Extract text from a single image using 
+    GPT-4o-mini Vision.
+    Returns the transcribed text string.
+    """
+    base64_image = image_bytes_to_base64(image_bytes)
+
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Extract all readable handwritten text from this examination script. CRITICAL: Return ONLY the raw extracted text with ABSOLUTELY NO preamble, NO introductory sentences, NO commentary, NO explanations, and NO markdown formatting (no ``` fences). Start immediately with the first word from the document. Preserve the original structure and line breaks."},
+                        {
+                            "type": "text",
+                            "text": TRANSCRIPTION_PROMPT
+                        },
                         {
                             "type": "image_url",
                             "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}"
+                                "url": f"data:image/jpeg;base64,{base64_image}",
+                                "detail": "high"
                             }
                         }
                     ]
                 }
             ],
-            # max_tokens=2000
+            temperature=0.0,
         )
         return response.choices[0].message.content.strip()
+
     except Exception as e:
-        print(f"GPT-4 extraction failed: {e}")
+        print(f"[OCR] GPT-4o-mini extraction failed: {e}")
         return ""
 
-def process_file_to_images(file_bytes: bytes, filename: str) -> list:
+
+def process_file_to_images(
+    file_bytes: bytes, 
+    filename: str
+) -> list:
     """
-    Accepts uploaded script (image or PDF).
-    Converts PDF pages into images if necessary.
+    Convert uploaded file to list of image byte arrays.
+    PDFs are converted page by page.
+    Images are returned as-is in a single-item list.
     """
     if filename.lower().endswith('.pdf'):
         try:
-            images = convert_from_bytes(file_bytes)
+            images = convert_from_bytes(
+                file_bytes, 
+                dpi=200
+            )
             image_bytes_list = []
             for img in images:
-                img_byte_arr = io.BytesIO()
-                img.save(img_byte_arr, format='JPEG')
-                image_bytes_list.append(img_byte_arr.getvalue())
+                buf = io.BytesIO()
+                img.save(buf, format='JPEG', quality=95)
+                image_bytes_list.append(buf.getvalue())
             return image_bytes_list
         except Exception as e:
-            print(f"Failed to process PDF: {e}")
+            print(f"[OCR] PDF conversion failed: {e}")
             return []
-    return [file_bytes]
-
-def extract_text_hybrid(file_bytes: bytes, filename: str = "image.jpg") -> dict:
-    """
-    Main Hybrid OCR Pipeline:
-    Step 1: Input handling
-    Step 2: Primary OCR (Tesseract)
-    Step 3: Quality Evaluation
-    Step 4: AI Fallback (GPT-4)
-    Step 5: Output Selection
-    """
-    image_bytes_list = process_file_to_images(file_bytes, filename)
-    
-    extracted_text_parts = []
-    methods_used = []
-    all_acceptable = True
-    
-    for img_bytes in image_bytes_list:
-        try:
-            # Step 2: Primary OCR
-            image = Image.open(io.BytesIO(img_bytes))
-            tesseract_text = pytesseract.image_to_string(image).strip()
-            
-            # Step 3: Evaluate OCR quality
-            if evaluate_ocr_quality(tesseract_text):
-                # Step 5: If Tesseract quality is acceptable -> use output
-                extracted_text_parts.append(tesseract_text)
-                methods_used.append("tesseract")
-            else:
-                # Step 4: AI Fallback
-                all_acceptable = False
-                gpt_text = extract_text_with_gpt4(img_bytes)
-                
-                # Clean GPT-4 output to remove conversational preambles
-                if gpt_text:
-                    gpt_text = clean_ocr_output(gpt_text)
-                
-                # Step 5: Replace with GPT-4 output
-                # Fallback to tesseract text if GPT fails to return anything
-                final_text = gpt_text if gpt_text else tesseract_text
-                extracted_text_parts.append(final_text)
-                methods_used.append("gpt4" if gpt_text else "tesseract (gpt4 failed)")
-                
-        except Exception as e:
-            print(f"Error during extraction pipeline: {e}")
-            
-    full_text = "\n\n".join(extracted_text_parts)
-    
-    # Determine overall method
-    if not methods_used:
-        overall_method = "none"
-    elif "gpt4" in methods_used and "tesseract" in methods_used:
-        overall_method = "hybrid"
     else:
-        overall_method = methods_used[0]
-    
+        return [file_bytes]
+
+
+def extract_text_hybrid(
+    file_bytes: bytes, 
+    filename: str = "image.jpg"
+) -> dict:
+    """
+    Main OCR pipeline using GPT-4o-mini Vision.
+    Processes each page and combines results.
+
+    Returns:
+        extracted_text: full transcribed text
+        extraction_method: always "gpt4-mini"
+        confidence_flag: "acceptable" or 
+                         "low_quality_fallback_used"
+    """
+    image_bytes_list = process_file_to_images(
+        file_bytes, filename
+    )
+
+    if not image_bytes_list:
+        return {
+            "extracted_text": "",
+            "extraction_method": "none",
+            "confidence_flag": "low_quality_fallback_used"
+        }
+
+    extracted_pages = []
+
+    for i, img_bytes in enumerate(image_bytes_list):
+        print(f"[OCR] Processing page {i + 1} of "
+              f"{len(image_bytes_list)}...")
+        page_text = extract_page_text(img_bytes)
+
+        if page_text:
+            extracted_pages.append(page_text)
+        else:
+            print(f"[OCR] Page {i + 1} returned no text")
+            # Insert a placeholder so the lecturer knows
+            # a page failed rather than silently losing it
+            extracted_pages.append(
+                f"[PAGE {i + 1} EXTRACTION FAILED - "
+                f"please review original script]"
+            )
+
+    full_text = "\n\n".join(extracted_pages)
+
+    confidence_flag = (
+        "acceptable" 
+        if full_text.strip() 
+        else "low_quality_fallback_used"
+    )
+
     return {
         "extracted_text": full_text,
-        "extraction_method": overall_method,
-        "confidence_flag": "acceptable" if all_acceptable else "low_quality_fallback_used"
+        "extraction_method": "gpt4-mini",
+        "confidence_flag": confidence_flag
     }

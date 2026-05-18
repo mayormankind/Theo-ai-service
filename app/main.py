@@ -24,7 +24,7 @@ from app.models.request_models import SegmentRequest
 
 app = FastAPI(
     title="Intelligent Assessment System API",
-    description="Automated Grading of Theoretical Examination Scripts in Nigerian Universities using OpenAI Embeddings (text-embedding-3-small) for semantic similarity scoring.",
+    description="Automated Grading of Theoretical Examination Scripts in Nigerian Universities. Uses GPT-4o-mini Vision for handwritten text extraction and OpenAI text-embedding-3-small for semantic similarity scoring.",
     version="1.0.0"
 )
 

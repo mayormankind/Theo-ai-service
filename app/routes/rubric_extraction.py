@@ -84,7 +84,7 @@ Guidelines:
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         messages=[
             {
                 "role": "user",
@@ -223,7 +223,7 @@ Guidelines:
             ]
 
             response = client.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-4o-mini",
                 messages=messages,
                 max_tokens=2000,
                 temperature=0.1,
@@ -337,7 +337,7 @@ Guidelines:
 """
 
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "user",
