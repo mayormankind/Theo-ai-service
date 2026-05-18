@@ -27,7 +27,9 @@ async def extract_identity(payload: IdentityRequest):
             resp.raise_for_status()
             file_bytes = resp.content
 
-        filename = payload.url.split('/')[-1] or 'file'
+        # Strip query string from url
+        url_no_query = payload.url.split('?')[0]
+        filename = url_no_query.split('/')[-1] or 'file'
         
         # Get first page only
         pages = process_file_to_images(
