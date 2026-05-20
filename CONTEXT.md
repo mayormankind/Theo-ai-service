@@ -70,36 +70,25 @@ The system processes uploaded exam scripts and compares student answers against 
 
 ---
 
-## 🔍 OCR Strategy (Hybrid Approach)
+## 🔍 OCR Strategy (Unified Vision Approach)
 
-The system uses a **hybrid OCR pipeline**:
+The system uses a **GPT-4o-mini Vision-based OCR pipeline**:
 
-### Step 1: Primary OCR
+### Step 1: Document Conversion
 
-- Tesseract (fast, offline, free)
+- Raw multi-page PDFs are converted page-by-page to image bytes (JPEG format) using `pdf2image`. Images are processed directly.
 
-### Step 2: Quality Evaluation
+### Step 2: High-Fidelity Transcription
 
-- Checks:
-  - Text length
-  - Noise ratio
-  - Readability
+- Each page is transcribed verbatim using a specialized `gpt-4o-mini` Vision model prompt, which preserves layout structures, handwritings, and spelling errors.
 
-### Step 3: Fallback OCR (if needed)
+### Step 3: Identity Correction & normalizations
 
-- GPT-4 Vision (or equivalent AI model)
-
-### Step 4: Output Selection
-
-- Use best available result
-- Track method used:
-  - `tesseract`
-  - `gpt4`
-  - `hybrid`
+- The Next.js backend parses the output to identify student identities and performs automatic error corrections on matric numbers (e.g. `1FS/2014986` -> `IFS/20/4986`).
 
 ### Key Idea:
 
-> Cheap first → Smart fallback → Reliable output
+> Direct Vision Transcription → Verbatim Text → Unified and Robust Processing pipeline without local engine dependencies.
 
 ---
 

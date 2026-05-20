@@ -16,23 +16,23 @@ The previously implemented API only supported single file uploads (`/grade`). Fo
 - **FastAPI BackgroundTasks**: Integrated native background job delegation. The endpoint immediately responds with a tracking `job_id`, ensuring a frictionless UX on the frontend.
 - **Status Polling (`/batch-status/{job_id}`)**: Created a lightweight tracking endpoint to allow the frontend to ping real-time completion statuses and retrieve array-aggregated results.
 
-## 2. Event-Loop Unblocking for AI Operations
+## 2. Event-Loop Unblocking for AI and Image Processing Operations
 
 **Problem:**  
-FastAPI is an asynchronous framework built on a single-threaded event loop. Running heavy CPU-bound functions (like `pytesseract` OCR processing and local Sentence-BERT model inferences) natively inside an `async def` route caused complete application starvation—blocking parallel user requests.
+FastAPI is an asynchronous framework built on a single-threaded event loop. Running heavy CPU-bound image and document transformations (such as converting multi-page PDFs to image bytes page-by-page via `pdf2image`) natively inside an `async def` route would block the main event loop, causing application starvation under heavy concurrent loads.
 
 **Solution:**  
-- Refactored the core workflow inside the route handling using `fastapi.concurrency.run_in_threadpool()`.
-- Thread delegation completely shifts synchronous ML computations (OCR and Embedding operations) off the main loop, permitting highly scalable parallelism.
+- Refactored core PDF conversion and OCR orchestration using `fastapi.concurrency.run_in_threadpool()`.
+- Thread delegation completely offloads these CPU-heavy parsing operations and blocking network-bound API calls (to OpenAI Vision and Embedding services) to a worker thread pool, ensuring the main event loop remains free to serve incoming concurrent HTTP requests.
 
 ## 3. Rubric Computation Caching (Massive Optimization)
 
 **Problem:**  
-When looping through batch scripts, the architecture evaluated the Sentence-BERT vector generation for the predefined marking rubric over and over again per student script.
+When looping through batch scripts, the grading pipeline would repeatedly generate vector embeddings for the predefined marking rubric questions and points over and over again for every script in the batch, causing massive API usage, cost inflation, and network latency.
 
 **Solution:**  
-- Refactored the grading pipeline to strictly pre-compute rubric `embeddings` **once** at the start of a batch job iteration.  
-- By storing rubric arrays securely in the scope before script mapping begins, we bypassed thousands of redundant matrix allocations. Expect heavy speedups for large student counts.
+- Implemented a robust in-memory embedding cache for rubric points.
+- The grading pipeline now strictly pre-computes OpenAI `text-embedding-3-small` vector representations for the rubric **once** at the start of a batch, storing them dynamically. Bypassing redundant OpenAI API embedding queries reduces grading latency from minutes to seconds per script and completely eliminates unnecessary API costs.
 
 ## 4. Automatic Student Identifier Extraction
 

@@ -3,16 +3,18 @@
 This is a microservice developed for the Final Year Project: "Design and Development of an Intelligent Assessment System for Automated Grading of Theoretical Examination Scripts in Nigerian Universities."
 
 ## Core Features
-1. **OCR Module**: Extracts text from uploaded images using Tesseract.
-2. **Answer Segmentation**: Uses regex to identify and segment individual questions.
-3. **Similarity & Grading**: Utilizes `Sentence-BERT` (all-MiniLM-L6-v2) for semantic text embeddings and compares student answers to an expected rubric using Cosine Similarity.
-4. **Custom Scoring**: Maps cosine similarity to strict scoring bands (e.g., >= 0.85 gives full marks).
+1. **OCR Module**: Extracts text verbatim from uploaded images and multi-page PDFs using **GPT-4o-mini Vision** via the OpenAI API (with `pdf2image` conversion support), removing the need for error-prone local Tesseract installations.
+2. **Answer Segmentation**: Uses regex to identify and segment individual questions (e.g. Q1, 2(a)) with an intelligent `gpt-4o-mini` JSON fallback if regular expression parsing fails.
+3. **Similarity & Grading**: Utilizes OpenAI's **`text-embedding-3-small`** for high-fidelity 1536-dimension semantic text embeddings, comparing student answers to an expected rubric using Cosine Similarity.
+4. **Custom Scoring**: Maps cosine similarity to strict scoring bands (Similarity >= 0.75 gives full marks, >= 0.50 gives partial marks).
 
 ## Prerequisites (Important!)
-You **must** install Tesseract OCR on your system for the OCR feature to work. 
-- **Windows**: Download the installer from [UB-Mannheim/tesseract](https://github.com/UB-Mannheim/tesseract/wiki). Ensure you add Tesseract-OCR to your system PATH!
-- **Linux (Ubuntu)**: `sudo apt-get install tesseract-ocr`
-- **Mac**: `brew install tesseract`
+You must configure your OpenAI API Key inside an environment variables file. No local Tesseract engine binary installations are required!
+- Create a `.env` file in the root of the `ai-service` directory and add:
+  ```env
+  OPENAI_API_KEY=your-openai-api-key-here
+  PORT=8000
+  ```
 
 ## Installation
 1. Create a virtual environment:
@@ -58,3 +60,4 @@ curl -X POST "http://127.0.0.1:8000/grade" \
   -F "file=@student_script.jpg" \
   -F 'rubric_str={"Q1": [{"point": "Explain the concept.", "weight": 2.0}]}'
 ```
+
