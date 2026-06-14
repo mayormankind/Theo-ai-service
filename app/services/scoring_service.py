@@ -20,16 +20,22 @@ def calculate_similarity(student_answer_emb: list, rubric_embs: list) -> list:
 
 def threshold_score(similarity: float) -> float:
     """
-    Applies the threshold function to convert a raw cosine similarity to a discrete score.
-    Returns:
-     - 1.0 if similarity >= SIMILARITY_FULL
-     - 0.5 if similarity >= SIMILARITY_PARTIAL
-     - 0.0 otherwise
+    Converts a raw cosine similarity to a continuous score in [0.0, 1.0].
+
+    Scoring bands:
+     - similarity >= SIMILARITY_FULL  → 1.0 (full credit)
+     - SIMILARITY_PARTIAL <= s < FULL → linearly interpolated between 0.5 and 1.0
+     - similarity < SIMILARITY_PARTIAL → 0.0 (no credit)
+
+    Linear interpolation prevents a cliff-edge where a student scoring
+    0.74 receives the same mark as one scoring 0.51.
     """
     if similarity >= SIMILARITY_FULL:
         return 1.0
     elif similarity >= SIMILARITY_PARTIAL:
-        return 0.5
+        # Linear interpolation: 0.5 at PARTIAL, 1.0 at FULL
+        ratio = (similarity - SIMILARITY_PARTIAL) / (SIMILARITY_FULL - SIMILARITY_PARTIAL)
+        return 0.5 + 0.5 * ratio
     else:
         return 0.0
 

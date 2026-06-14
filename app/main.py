@@ -3,18 +3,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
-import nltk
-
 # Load environment variables
 load_dotenv()
-
-# Download necessary NLTK data
-try:
-    nltk.download('wordnet', quiet=True)
-    nltk.download('stopwords', quiet=True)
-    nltk.download('omw-1.4', quiet=True)
-except Exception as e:
-    print(f"Warning: Failed to download NLTK data: {e}")
 
 # Get port from environment or default to 8000
 port = int(os.getenv("PORT", 8000))

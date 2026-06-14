@@ -1,5 +1,7 @@
 # src/ai-service/app/services/embeddings.py
 import os
+import json
+import atexit
 import numpy as np
 from openai import OpenAI
 from typing import List
@@ -7,8 +9,32 @@ from typing import List
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Simple in-memory cache for embeddings
-_embedding_cache = {}
+# --- Persistent file-backed embedding cache ---
+_CACHE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "embedding_cache.json")
+_CACHE_PATH = os.path.abspath(_CACHE_PATH)
+
+def _load_cache() -> dict:
+    if os.path.exists(_CACHE_PATH):
+        try:
+            with open(_CACHE_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+def _save_cache(cache: dict) -> None:
+    try:
+        with open(_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(cache, f)
+    except OSError as e:
+        print(f"[Embeddings] Warning: could not persist cache: {e}")
+
+# Load once at module import; in-memory dict is the hot layer
+_embedding_cache: dict = _load_cache()
+
+# Flush to disk on clean shutdown
+atexit.register(_save_cache, _embedding_cache)
+
 
 def get_embedding(text: str) -> List[float]:
     """

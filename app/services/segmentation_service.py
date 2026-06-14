@@ -9,9 +9,20 @@ client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "dummy-key"))
 def segment_answers(raw_text: str) -> dict:
     """
     Segments the raw OCR text into individual questions using regular expressions.
-    Detects markers like: "Q1", "Question 1", "1(a)", "1.", etc.
+    Detects markers like: "Q1", "Question 1", "1(a)", "1a" when at the start of a line.
+
+    The pattern is anchored to line-start (or explicit "Question"/"Q" prefix) to
+    avoid matching numbered lists, years, or decimal numbers inside answer text.
     """
-    pattern = re.compile(r'(?i)(?:question\s*\d+[a-z]?|q\d+[a-z]?|\b\d+\s*\([a-z]\)|\b\d+[a-z]\b|\b\d+\.)')
+    pattern = re.compile(
+        r'(?im)'                                  # case-insensitive, multiline
+        r'(?:'
+        r'(?:^|\n)\s*question\s*\d+[a-z]?'       # "Question 1" / "Question 1a" at line start
+        r'|(?:^|\n)\s*q\d+[a-z]?(?!\w)'          # "Q1" / "Q2b" at line start (not inside a word)
+        r'|(?:^|\n)\s*\d+\s*\([a-z]\)'           # "1(a)", "2(b)" at line start
+        r'|(?:^|\n)\s*\d+[a-z]\b'                # "1a", "2b" at line start
+        r')'
+    )
     matches = list(pattern.finditer(raw_text))
     
     # Intelligent LLM Fallback if Regex fails

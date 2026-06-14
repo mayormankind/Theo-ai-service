@@ -22,7 +22,7 @@ def extract_matric(text: str) -> str | None:
 async def extract_identity(payload: IdentityRequest):
     try:
         # Download file
-        async with httpx.AsyncClient(timeout=30.0, verify=False) as c:
+        async with httpx.AsyncClient(timeout=30.0) as c:
             resp = await c.get(payload.url)
             resp.raise_for_status()
             file_bytes = resp.content

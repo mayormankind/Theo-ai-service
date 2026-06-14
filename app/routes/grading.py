@@ -3,6 +3,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from typing import Optional, List
 import json
 import os
+import re
 from fastapi.concurrency import run_in_threadpool
 
 from app.models.response_models import GradeResponse, QuestionResult
@@ -13,6 +14,20 @@ from app.services.scoring_service import calculate_similarity, calculate_final_s
 from app.utils.text_preprocessing import preprocess_text, extract_student_id
 
 router = APIRouter()
+
+_QUESTION_PREFIX_RE = re.compile(r'^(?:question\s*|q)', re.IGNORECASE)
+
+def normalize_question_label(s: str) -> str:
+    """
+    Normalise a question label to a bare digit string for matching.
+    e.g. "Question 1" → "1", "Q2b" → "2b", "2(a)" → "2a", "2." → "2"
+    Only the leading 'question' or 'q' prefix is stripped, not every 'q'
+    in the string (which would corrupt words like 'equal').
+    """
+    s = s.lower().strip()
+    s = _QUESTION_PREFIX_RE.sub('', s)
+    s = re.sub(r'[\s\.\(\)]', '', s)
+    return s
 
 
 @router.post("/grade", response_model=GradeResponse)
@@ -67,13 +82,12 @@ async def grade_endpoint(
             continue
             
         clean_student_answer = answer_text.strip()
-        
-        # Normalization for matching (e.g. "Question 1" vs "Q1")
-        def normalize(s):
-            return s.lower().replace(" ", "").replace("question", "").replace("q", "")
-            
-        target = normalize(question)
-        matched_rubric_key = next((k for k in rubric_data.keys() if normalize(k) == target), None)
+
+        target = normalize_question_label(question)
+        matched_rubric_key = next(
+            (k for k in rubric_data.keys() if normalize_question_label(k) == target),
+            None
+        )
         
         if not matched_rubric_key:
             results.append(QuestionResult(

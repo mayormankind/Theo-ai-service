@@ -3,6 +3,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 import json
+import re
 import base64
 import os
 from dotenv import load_dotenv
@@ -17,6 +18,54 @@ load_dotenv()
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 router = APIRouter()
+
+
+def _parse_llm_json(content: str) -> dict:
+    """
+    Extract and parse the first JSON object from an LLM response string.
+    Raises ValueError if no valid JSON object is found.
+    """
+    start = content.find('{')
+    if start == -1:
+        raise ValueError(f"No JSON object found in LLM response. Raw content: {content[:500]}")
+    try:
+        return json.loads(content[start:])
+    except json.JSONDecodeError:
+        match = re.search(r'\{[\s\S]*\}', content)
+        if match:
+            return json.loads(match.group())
+        raise ValueError("Could not parse JSON object from LLM response")
+
+
+def _compute_confidence(rubric: "ExtractedRubric") -> float:
+    """
+    Compute a real confidence score (0.0 – 1.0) based on how completely
+    the rubric was populated.
+
+    Criteria:
+    - title present          → 0.2
+    - courseCode present     → 0.1
+    - at least 1 question    → 0.2
+    - totalMarks > 0         → 0.1
+    - each question has parts with keyPoints (up to 0.4 proportionally)
+    """
+    score = 0.0
+    if rubric.title and rubric.title.strip():
+        score += 0.2
+    if rubric.courseCode and rubric.courseCode.strip():
+        score += 0.1
+    if rubric.questions:
+        score += 0.2
+    if rubric.totalMarks and rubric.totalMarks > 0:
+        score += 0.1
+    if rubric.questions:
+        questions_with_keypoints = sum(
+            1 for q in rubric.questions
+            if any(p.get("keyPoints") for p in q.parts)
+        )
+        score += 0.4 * (questions_with_keypoints / len(rubric.questions))
+    return round(min(score, 1.0), 2)
+
 
 class ExtractedQuestion(BaseModel):
     questionNumber: str
@@ -96,41 +145,20 @@ Guidelines:
     )
 
     content = response.choices[0].message.content.strip()
-    
-    # Log the raw response for debugging
     print(f"OpenAI Response (first 500 chars): {content[:500]}")
-    print(f"Full response length: {len(content)}")
-    
-    # Parse JSON from response
-    json_match = content.find('{')
-    if json_match == -1:
-        raise ValueError(f"No JSON found in response. Raw content: {content[:1000]}")
-    
-    json_content = content[json_match:]
-    try:
-        rubric_data = json.loads(json_content)
-    except json.JSONDecodeError:
-        import re
-        json_pattern = r'\{[\s\S]*\}'
-        json_match = re.search(json_pattern, content)
-        if json_match:
-            rubric_data = json.loads(json_match.group())
-        else:
-            raise ValueError("Could not parse JSON from response")
 
-    # Validate and structure the response
+    rubric_data = _parse_llm_json(content)
     extracted_rubric = ExtractedRubric(**rubric_data)
-    
-    # Ensure all parts have labels
+
     for q in extracted_rubric.questions:
         for idx, part in enumerate(q.parts):
             if not part.get("label"):
-                part["label"] = chr(97 + idx)  # a, b, c, etc.
-    
+                part["label"] = chr(97 + idx)
+
     return ExtractionResult(
         success=True,
         rubric=extracted_rubric,
-        confidence=0.80
+        confidence=_compute_confidence(extracted_rubric)
     )
 
 @router.post("/extract/from-document", response_model=ExtractionResult)
@@ -230,40 +258,20 @@ Guidelines:
             )
 
             content = response.choices[0].message.content.strip()
-            
-            # Log the raw response for debugging
             print(f"OpenAI Response (first 500 chars): {content[:500]}")
-            print(f"Full response length: {len(content)}")
-            
-            # Parse JSON from response
-            json_match = content.find('{')
-            if json_match == -1:
-                raise ValueError(f"No JSON found in response. Raw content: {content[:1000]}")
-            
-            json_content = content[json_match:]
-            try:
-                rubric_data = json.loads(json_content)
-            except json.JSONDecodeError:
-                import re
-                json_pattern = r'\{[\s\S]*\}'
-                json_match = re.search(json_pattern, content)
-                if json_match:
-                    rubric_data = json.loads(json_match.group())
-                else:
-                    raise ValueError("Could not parse JSON from response")
 
+            rubric_data = _parse_llm_json(content)
             extracted_rubric = ExtractedRubric(**rubric_data)
-            
-            # Ensure all parts have labels
+
             for q in extracted_rubric.questions:
                 for idx, part in enumerate(q.parts):
                     if not part.get("label"):
-                        part["label"] = chr(97 + idx)  # a, b, c, etc.
-            
+                        part["label"] = chr(97 + idx)
+
             return ExtractionResult(
                 success=True,
                 rubric=extracted_rubric,
-                confidence=0.85
+                confidence=_compute_confidence(extracted_rubric)
             )
         
         else:
@@ -349,38 +357,19 @@ Guidelines:
         )
 
         content = response.choices[0].message.content.strip()
-        
-        # Parse JSON from response
-        json_match = content.find('{')
-        if json_match == -1:
-            raise ValueError("No JSON found in response")
-        
-        json_content = content[json_match:]
-        try:
-            rubric_data = json.loads(json_content)
-        except json.JSONDecodeError:
-            # Try to extract JSON more carefully
-            import re
-            json_pattern = r'\{[\s\S]*\}'
-            json_match = re.search(json_pattern, content)
-            if json_match:
-                rubric_data = json.loads(json_match.group())
-            else:
-                raise ValueError("Could not parse JSON from response")
 
-        # Validate and structure the response
+        rubric_data = _parse_llm_json(content)
         extracted_rubric = ExtractedRubric(**rubric_data)
-        
-        # Ensure all parts have labels
+
         for q in extracted_rubric.questions:
             for idx, part in enumerate(q.parts):
                 if not part.get("label"):
-                    part["label"] = chr(97 + idx)  # a, b, c, etc.
-        
+                    part["label"] = chr(97 + idx)
+
         return ExtractionResult(
             success=True,
             rubric=extracted_rubric,
-            confidence=0.80
+            confidence=_compute_confidence(extracted_rubric)
         )
 
     except Exception as e:
