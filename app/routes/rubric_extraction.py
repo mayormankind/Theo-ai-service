@@ -1,4 +1,5 @@
 # src/ai-service/app/routes/rubric_extraction.py
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
@@ -118,7 +119,7 @@ Extract the complete rubric structure from this marking scheme text and return a
 }}
 
 Text to analyze:
-{text[:10000]}  # Limit to first 10k chars to avoid token limits
+{text[:10000]}
 
 Guidelines:
 - Extract ALL questions and sub-parts thoroughly
@@ -140,7 +141,7 @@ Guidelines:
                 "content": prompt
             }
         ],
-        max_tokens=2000,
+        max_tokens=4096,
         temperature=0.1,
     )
 
@@ -253,7 +254,7 @@ Guidelines:
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
-                max_tokens=2000,
+                max_tokens=4096,
                 temperature=0.1,
             )
 
@@ -352,7 +353,7 @@ Guidelines:
                     "content": prompt
                 }
             ],
-            max_tokens=2000,
+            max_tokens=4096,
             temperature=0.1,
         )
 
