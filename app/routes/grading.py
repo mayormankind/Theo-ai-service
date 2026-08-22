@@ -10,6 +10,7 @@ from app.models.response_models import GradeResponse, QuestionResult
 from app.services.ocr_service import extract_text_hybrid
 from app.services.segmentation_service import segment_answers
 from app.services.embedding_service import get_embeddings
+from app.services.embeddings import EmbeddingError
 from app.services.scoring_service import calculate_similarity, calculate_final_score
 from app.utils.text_preprocessing import preprocess_text, extract_student_id
 
@@ -117,8 +118,16 @@ async def grade_endpoint(
             continue
             
         # Get embeddings concurrently
-        student_emb = (await run_in_threadpool(get_embeddings, [clean_student_answer]))[0]
-        rubric_embs = await run_in_threadpool(get_embeddings, rubric_texts)
+        # If the embedding provider fails, abort the whole request with 503
+        # rather than letting a zero-vector silently score the student 0.
+        try:
+            student_emb = (await run_in_threadpool(get_embeddings, [clean_student_answer]))[0]
+            rubric_embs = await run_in_threadpool(get_embeddings, rubric_texts)
+        except EmbeddingError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Embedding provider unavailable — script not graded: {e}"
+            )
         
         similarities = await run_in_threadpool(calculate_similarity, student_emb, rubric_embs)
         final_score, confidence = calculate_final_score(

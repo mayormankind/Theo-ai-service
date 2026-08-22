@@ -1,5 +1,4 @@
 # src/ai-service/app/routes/rubric_extraction.py
-# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
