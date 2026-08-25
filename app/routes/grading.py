@@ -71,53 +71,79 @@ async def grade_endpoint(
         return GradeResponse(
             student_id="UNKNOWN", questions=[]
         )
-        
-    # Step 2: Segmentation
-    segmented_answers = segment_answers(raw_text)
-    
-    results = []
-    
-    for question, answer_text in segmented_answers.items():
-        if not answer_text.strip():
-            results.append(QuestionResult(question=question, score=0.0, confidence=0.0, breakdown=[]))
-            continue
-            
-        clean_student_answer = answer_text.strip()
 
+    from app.config.constants import (
+        SIMILARITY_FULL, SIMILARITY_PARTIAL
+    )
+
+    # Step 2: Rubric-aware segmentation.
+    # Passing the rubric's canonical labels makes segmentation deterministic and
+    # stops answers from merging/fragmenting on unusual labelling styles.
+    expected_labels = [normalize_question_label(k) for k in rubric_data.keys()]
+    segmented_answers = segment_answers(raw_text, expected_labels=expected_labels)
+
+    # Map canonical label -> (document_order, answer_text). Dict insertion order
+    # from the segmenter is document order (top-to-bottom scan).
+    seg_lookup = {}
+    for i, (k, v) in enumerate(segmented_answers.items()):
+        seg_lookup[normalize_question_label(k)] = (i, v)
+
+    # Emit answered questions first (in document order) then unanswered ones, so
+    # the array index still reflects document order for FIRST_N selection.
+    rubric_keys = list(rubric_data.keys())
+
+    def _order_key(rk: str):
+        t = normalize_question_label(rk)
+        if t in seg_lookup:
+            return (0, seg_lookup[t][0])
+        return (1, rubric_keys.index(rk))
+
+    ordered_keys = sorted(rubric_keys, key=_order_key)
+
+    results = []
+
+    # Iterate over the RUBRIC, not the segments, so EVERY question always gets a
+    # result with its correct max marks. A question the student didn't answer
+    # (or that couldn't be located) scores 0 instead of silently vanishing —
+    # which previously produced misleading "0/60, only 1 of 3 graded" reports.
+    for question in ordered_keys:
+        rubrics_for_q = rubric_data[question] or []
         target = normalize_question_label(question)
-        matched_rubric_key = next(
-            (k for k in rubric_data.keys() if normalize_question_label(k) == target),
-            None
-        )
-        
-        if not matched_rubric_key:
-            results.append(QuestionResult(
-                question=question, score=0.0, confidence=0.0, breakdown=[],
-                matched_concepts=[], missing_concepts=[]
-            ))
-            continue
-            
-        rubrics_for_q = rubric_data[matched_rubric_key]
+        answer_text = (seg_lookup.get(target, (0, ""))[1] or "").strip()
+
         rubric_points_raw = [item['point'] for item in rubrics_for_q]
         rubric_texts = [p.strip() for p in rubric_points_raw]
         rubric_weights = [item.get('weight', 1.0) for item in rubrics_for_q]
-        
-        # Get max marks for this question
-        # Prefer explicit maxScore field, fallback to sum 
-        # of point maxScores, fallback to 0
-        question_max = rubrics_for_q[0].get(
-            'questionMaxScore', 
-            sum(item.get('maxScore', 0) for item in rubrics_for_q)
+
+        # Get max marks for this question. Prefer explicit questionMaxScore,
+        # fallback to the sum of point maxScores. Guard against a question that
+        # was defined with no rubric points.
+        question_max = (
+            rubrics_for_q[0].get(
+                'questionMaxScore',
+                sum(item.get('maxScore', 0) for item in rubrics_for_q)
+            )
+            if rubrics_for_q else 0
         )
-        
-        if not rubric_texts:
+
+        # No answer located, or no rubric points: emit an explicit zero so the
+        # question is still accounted for in the total.
+        if not answer_text or not rubric_texts:
             results.append(QuestionResult(
-                question=question, score=0.0, confidence=0.0, breakdown=[],
-                matched_concepts=[], missing_concepts=[]
+                question=question,
+                answer=answer_text,
+                score=0.0,
+                confidence=0.0,
+                breakdown=[],
+                matched_concepts=[],
+                partial_concepts=[],
+                missing_concepts=rubric_points_raw,
             ))
             continue
-            
-        # Get embeddings concurrently
+
+        clean_student_answer = answer_text
+
+        # Get embeddings concurrently.
         # If the embedding provider fails, abort the whole request with 503
         # rather than letting a zero-vector silently score the student 0.
         try:
@@ -128,37 +154,33 @@ async def grade_endpoint(
                 status_code=503,
                 detail=f"Embedding provider unavailable — script not graded: {e}"
             )
-        
+
         similarities = await run_in_threadpool(calculate_similarity, student_emb, rubric_embs)
         final_score, confidence = calculate_final_score(
             similarities,
             rubric_weights,
             question_max_score=question_max
         )
-        
+
         print(f"[GRADE] Q:{question} | "
               f"max:{question_max} | "
               f"sim:{[round(s,2) for s in similarities]} | "
               f"score:{final_score}")
-        
+
         # Determine matched, partial and missing concepts based on aligned thresholds
-        from app.config.constants import (
-            SIMILARITY_FULL, SIMILARITY_PARTIAL
-        )
-        
-        matched = [rubric_points_raw[i] for i, s in 
-                   enumerate(similarities) 
+        matched = [rubric_points_raw[i] for i, s in
+                   enumerate(similarities)
                    if s >= SIMILARITY_FULL]
-        partial = [rubric_points_raw[i] for i, s in 
-                   enumerate(similarities) 
+        partial = [rubric_points_raw[i] for i, s in
+                   enumerate(similarities)
                    if SIMILARITY_PARTIAL <= s < SIMILARITY_FULL]
-        missing = [rubric_points_raw[i] for i, s in 
-                   enumerate(similarities) 
+        missing = [rubric_points_raw[i] for i, s in
+                   enumerate(similarities)
                    if s < SIMILARITY_PARTIAL]
-        
+
         results.append(QuestionResult(
             question=question,
-            answer=answer_text.strip(),
+            answer=answer_text,
             score=final_score,
             confidence=confidence,
             breakdown=similarities,

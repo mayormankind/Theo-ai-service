@@ -90,6 +90,9 @@ def extract_page_text(image_bytes: bytes) -> str:
                 }
             ],
             temperature=0.0,
+            # Fixed seed reduces run-to-run transcription drift, which in turn
+            # keeps segmentation and scores stable when a script is re-graded.
+            seed=7,
         )
         return response.choices[0].message.content.strip()
 

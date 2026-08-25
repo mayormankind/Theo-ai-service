@@ -49,7 +49,10 @@ def health():
 @app.post("/segment", tags=["Segmentation"])
 def segment_endpoint(req: SegmentRequest):
     """
-    Receives raw text and segments it into structured answers based on regex patterns.
+    Receives raw text and segments it into structured answers.
+
+    Pass ``expected_labels`` (the rubric's question labels) to get rubric-aware
+    segmentation, which is far more accurate and fully deterministic.
     """
-    segments = segment_answers(req.raw_text)
+    segments = segment_answers(req.raw_text, expected_labels=req.expected_labels)
     return segments
