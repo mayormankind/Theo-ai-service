@@ -164,12 +164,16 @@ def extract_text_hybrid(
         if page_text:
             extracted_pages.append(page_text)
         else:
-            print(f"[OCR] Page {i + 1} returned no text")
-            # Insert a placeholder so the lecturer knows a page failed rather than silently losing it
-            extracted_pages.append(
-                f"[PAGE {i + 1} EXTRACTION FAILED - "
-                f"please review original script]"
-            )
+            print(f"[OCR] Page {i + 1} returned no text — retrying once")
+            page_text = extract_page_text(img_bytes)
+            if page_text:
+                extracted_pages.append(page_text)
+            else:
+                print(f"[OCR] Page {i + 1} EXTRACTION FAILED after retry")
+                extracted_pages.append(
+                    f"[PAGE {i + 1} EXTRACTION FAILED - "
+                    f"please review original script]"
+                )
 
     full_text = "\n\n".join(extracted_pages)
     

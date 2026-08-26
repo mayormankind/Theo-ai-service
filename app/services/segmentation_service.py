@@ -39,9 +39,29 @@ _LEADING_MARKER = re.compile(
     r'|(?P<dn>\d{1,2})\s*(?P<dl>[a-z])?\s*[.)]'
     # roman sub-parts: (i) (ii) i) ii.
     r'|[\(]?\s*(?P<rom>x|ix|iv|v?i{1,3}|v)\s*[\).]'
+    # bare QUESTION/Q followed by dots/dashes (no number — inferred later)
+    r'|(?:questions?|q)\s*[.:\-]{3,}\s*'
     r')',
     re.IGNORECASE,
 )
+
+# Attempted-questions list extractor.
+# FUTA exam scripts contain a header like:
+#   NUMBERS OF THE ANSWERS in the order in which they have been written
+#   2  4  5
+_ATTEMPTED_LIST_RE = re.compile(
+    r'NUMBERS OF THE ANSWERS[^\n]*\n(?:[^\n]*\n)?\s*([0-9]+(?:\s+[0-9]+)*)',
+    re.IGNORECASE,
+)
+
+
+def _extract_attempted_labels(raw_text: str) -> List[str]:
+    """Return canonical labels for the questions the student claims to have attempted."""
+    m = _ATTEMPTED_LIST_RE.search(raw_text or "")
+    if not m:
+        return []
+    numbers = m.group(1).strip().split()
+    return [n.lstrip("0") or "0" for n in numbers]
 
 
 def _norm(num: Optional[str], letter: Optional[str] = None, roman: Optional[str] = None) -> str:
@@ -57,7 +77,8 @@ def _norm(num: Optional[str], letter: Optional[str] = None, roman: Optional[str]
 
 def _match_leading_marker(line: str):
     """Return (normalized_label, consumed_char_count) for a line that begins
-    with a question marker, else None."""
+    with a question marker, else None. Returns ("__UNLABELED__", n) for a bare
+    QUESTION/Q header with no number, so the caller can infer the label later."""
     m = _LEADING_MARKER.match(line)
     if not m:
         return None
@@ -74,8 +95,26 @@ def _match_leading_marker(line: str):
     elif m.group("rom"):
         label = _norm(None, roman=m.group("rom"))
     else:
-        return None
+        # bare QUESTION/Q with no number
+        return "__UNLABELED__", m.end()
     return label, m.end()
+
+
+def _tolerant_map_to_expected(label: str, expected_index: dict) -> Optional[str]:
+    """Map a detected label to a known rubric label, with digit-prefix fallback."""
+    if label in expected_index:
+        return label
+    parent = _parent(label)
+    if parent and parent in expected_index:
+        return parent
+    m = re.match(r'^(\d+)([a-z]*)$', label, re.IGNORECASE)
+    if m:
+        digits, letters = m.group(1), m.group(2)
+        for i in range(len(digits) - 1, 0, -1):
+            candidate = digits[:i] + letters
+            if candidate in expected_index:
+                return candidate
+    return None
 
 
 def _detect_markers(raw_text: str):
@@ -98,13 +137,13 @@ def _parent(label: str) -> str:
 
 
 def _map_to_expected(label: str, expected_index: dict) -> Optional[str]:
-    """Map a detected label to a known rubric label (exact, then parent)."""
+    """Map a detected label to a known rubric label (exact, then parent, then digit-prefix fallback)."""
     if label in expected_index:
         return label
     parent = _parent(label)
     if parent and parent in expected_index:
         return parent
-    return None
+    return _tolerant_map_to_expected(label, expected_index)
 
 
 def _numeric_key(label: str) -> int:
@@ -124,6 +163,10 @@ def segment_answers(raw_text: str, expected_labels: Optional[List[str]] = None) 
       * stray numbers/years being treated as new questions,
       * answers merging because a marker style wasn't recognised.
 
+    The attempted-questions list (if present in the exam header) is also used
+    as an additional expected-label source so that answers with messy or missing
+    markers can still be located.
+
     Sub-parts (e.g. "1a", "1b") that map to a parent rubric question ("1") are
     concatenated under that question, in document order.
 
@@ -132,17 +175,29 @@ def segment_answers(raw_text: str, expected_labels: Optional[List[str]] = None) 
     """
     raw_text = raw_text or ""
     expected_index = None
-    if expected_labels:
+    merged_labels = list(expected_labels or [])
+
+    if merged_labels:
+        # Add attempted-list labels as additional anchors so messy / unlabeled
+        # answers can still be located even when the body markers are broken.
+        attempted = _extract_attempted_labels(raw_text)
+        for lbl in attempted:
+            if lbl not in merged_labels:
+                merged_labels.append(lbl)
         # preserve rubric order for monotonic validation
-        expected_index = {lbl: i for i, lbl in enumerate(expected_labels)}
+        expected_index = {lbl: i for i, lbl in enumerate(merged_labels)}
 
     markers = _detect_markers(raw_text)
 
     accepted = []          # (answer_start_char, line_start_char, canonical_label)
+    unlabeled = []         # (answer_start_char, line_start_char) for bare QUESTION blocks
     used = set()
     last_order = -1
 
     for line_start, answer_start, label in markers:
+        if label == "__UNLABELED__":
+            unlabeled.append((line_start, answer_start))
+            continue
         if expected_index is not None:
             mapped = _map_to_expected(label, expected_index)
             if mapped is None:
@@ -159,6 +214,20 @@ def segment_answers(raw_text: str, expected_labels: Optional[List[str]] = None) 
         used.add(mapped)
         last_order = order
         accepted.append((line_start, answer_start, mapped))
+
+    # Infer labels for unlabeled QUESTION blocks from document order.
+    if unlabeled and expected_index is not None:
+        unmatched = [lbl for lbl in merged_labels if lbl not in used]
+        for idx, (line_start, answer_start) in enumerate(unlabeled):
+            if idx >= len(unmatched):
+                break
+            mapped = unmatched[idx]
+            order = expected_index[mapped]
+            if mapped in used or order < last_order:
+                continue
+            used.add(mapped)
+            last_order = order
+            accepted.append((line_start, answer_start, mapped))
 
     # Build segments between consecutive accepted markers.
     if accepted:
@@ -181,7 +250,7 @@ def segment_answers(raw_text: str, expected_labels: Optional[List[str]] = None) 
     if expected_index is not None and len(expected_index) == 1:
         return {next(iter(expected_index)): stripped}
     if len(stripped) > 20:
-        return intelligent_segmentation_fallback(raw_text, expected_labels)
+        return intelligent_segmentation_fallback(raw_text, merged_labels if merged_labels else expected_labels)
     return {"Uncategorized": stripped}
 
 
