@@ -12,7 +12,7 @@ from app.services.segmentation_service import segment_answers
 from app.services.embedding_service import get_embeddings
 from app.services.embeddings import EmbeddingError
 from app.services.scoring_service import calculate_similarity, calculate_final_score
-from app.utils.text_preprocessing import preprocess_text, extract_student_id
+from app.utils.text_preprocessing import preprocess_text, extract_student_id, clean_ocr_output
 
 router = APIRouter()
 
@@ -51,7 +51,7 @@ async def grade_endpoint(
     # Use pre-extracted text if provided, 
     # otherwise run OCR on the file
     if extracted_text and extracted_text.strip():
-        raw_text = extracted_text.strip()
+        raw_text = clean_ocr_output(extracted_text.strip())
         student_id = extract_student_id(raw_text)
     elif file:
         image_bytes = await file.read()
@@ -59,7 +59,7 @@ async def grade_endpoint(
         ocr_result = await run_in_threadpool(
             extract_text_hybrid, image_bytes, filename
         )
-        raw_text = ocr_result.get("extracted_text", "")
+        raw_text = clean_ocr_output(ocr_result.get("extracted_text", ""))
         student_id = extract_student_id(raw_text)
     else:
         raise HTTPException(

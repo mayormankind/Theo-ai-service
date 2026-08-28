@@ -25,6 +25,10 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 _CACHE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "embedding_cache.json")
 _CACHE_PATH = os.path.abspath(_CACHE_PATH)
 
+# Cap input length to stay safely under OpenAI's 8192-token per-input limit.
+# ~6000 chars ≈ 750–900 tokens for typical English text.
+_MAX_EMBEDDING_CHARS = 6000
+
 def _load_cache() -> dict:
     if os.path.exists(_CACHE_PATH):
         try:
@@ -99,12 +103,14 @@ def get_embeddings_batch(texts: List[str]) -> List[List[float]]:
     for i, text in enumerate(texts):
         if not text or not text.strip():
             embeddings.append([0.0] * 1536)
-        elif text in _embedding_cache:
-            embeddings.append(_embedding_cache[text])
         else:
-            uncached_texts.append(text)
-            uncached_indices.append(i)
-            embeddings.append(None)  # Placeholder
+            safe_text = text[:_MAX_EMBEDDING_CHARS]
+            if safe_text in _embedding_cache:
+                embeddings.append(_embedding_cache[safe_text])
+            else:
+                uncached_texts.append(safe_text)
+                uncached_indices.append(i)
+                embeddings.append(None)  # Placeholder
     
     # Batch API call for uncached texts
     if uncached_texts:

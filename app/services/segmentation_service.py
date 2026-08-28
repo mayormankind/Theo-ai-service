@@ -49,6 +49,37 @@ _LEADING_MARKER = re.compile(
 # FUTA exam scripts contain a header like:
 #   NUMBERS OF THE ANSWERS in the order in which they have been written
 #   2  4  5
+def _strip_exam_header(raw_text: str) -> str:
+    """
+    Remove FUTA exam header boilerplate that appears before student answers.
+    Strips everything up to and including the 'For Examiner's use only' block
+    or the 'NUMBERS OF THE ANSWERS' block so that numbered directions like
+    '1. Write legible...' are never mistaken for question markers.
+    """
+    if not raw_text:
+        return raw_text
+
+    # Try to find "For Examiner's use only" and strip through the next blank line
+    m = re.search(
+        r'For Examiner\'s use only.*?(?:\n\s*\n|\Z)',
+        raw_text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if m:
+        return raw_text[m.end():]
+
+    # Try to find "NUMBERS OF THE ANSWERS" and strip through the attempted list
+    m = re.search(
+        r'NUMBERS OF THE ANSWERS[^\n]*\n(?:[^\n]*\n)?\s*[0-9]+(?:\s+[0-9]+)*\s*\n?',
+        raw_text,
+        re.IGNORECASE,
+    )
+    if m:
+        return raw_text[m.end():]
+
+    return raw_text
+
+
 _ATTEMPTED_LIST_RE = re.compile(
     r'NUMBERS OF THE ANSWERS[^\n]*\n(?:[^\n]*\n)?\s*([0-9]+(?:\s+[0-9]+)*)',
     re.IGNORECASE,
@@ -174,6 +205,7 @@ def segment_answers(raw_text: str, expected_labels: Optional[List[str]] = None) 
     *deterministic* LLM fallback constrained to the expected labels.
     """
     raw_text = raw_text or ""
+    raw_text = _strip_exam_header(raw_text)
     expected_index = None
     merged_labels = list(expected_labels or [])
 
@@ -237,6 +269,29 @@ def segment_answers(raw_text: str, expected_labels: Optional[List[str]] = None) 
             text = raw_text[answer_start:end].strip()
             if not text:
                 continue
+            # Skip segments that are clearly exam boilerplate / header text
+            # rather than student answers. Typical header lines are short and
+            # contain known direction phrases.
+            if len(text) < 60:
+                lower = text.lower()
+                if any(phrase in lower for phrase in [
+                    'write legible',
+                    'begin each answer',
+                    'cross out rough work',
+                    'in your own interest',
+                    'supplementary books',
+                    'answer books used',
+                    'write on both sides',
+                    'for examiner',
+                    'question no.',
+                    'candidate',
+                    'examination (insert',
+                    'title of course',
+                    'signature',
+                    'semester',
+                    'date of exam',
+                ]):
+                    continue
             if label in segments:
                 segments[label] = f"{segments[label]}\n{text}".strip()
             else:
