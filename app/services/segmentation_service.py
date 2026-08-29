@@ -86,17 +86,26 @@ def _strip_exam_header(raw_text: str) -> str:
     """
     Remove FUTA exam header boilerplate that appears before student answers.
     Uses a two-pass approach:
-      1. Try to find a strong answer marker (QUESTION, Q<n>, Answer <n>) and
-         keep everything from the first such marker onward.
+      1. Find the first line that looks like a real student-answer marker
+         (QUESTION, Question, Q<n>, Answer <n>, etc.) and strip everything
+         before it. This handles all marker styles including dots, colons, etc.
       2. Fallback: strip through 'For Examiner's use only' block or
          'NUMBERS OF THE ANSWERS' block.
     """
     if not raw_text:
         return raw_text
 
-    # Pass 1: find first strong student-answer marker and strip everything before it.
+    # Pass 1: find first line that starts with a question-like marker.
+    # We match: QUESTION, Question, Q<n>, Answer <n>, or bare numbers like
+    # "1." "2)" "(1)" "[1]" etc. that appear at the start of a line.
     marker = re.search(
-        r'(?:^|\n\s*)(?:QUESTION\s*\d|Q\s*\d{1,2}(?:[a-z])?\s*[.)]|ANSWER\s*\d)',
+        r'(?:^|\n)(\s*)(?:'
+        r'(?:questions?|qtn|qn|q)\s*[.:\-]{0,20}\s*(?:\d{1,2}(?:[a-z])?)?'
+        r'|(?:number|no|ans(?:wer)?|sol(?:ution)?)\s*[.:\-]?\s*\d{1,2}'
+        r'|[\(\[]\s*\d{1,2}\s*[\)\]]'
+        r'|\d{1,2}\s*[.)]'
+        r'|(?:questions?|q)\s*[.:\-]{3,}'
+        r')',
         raw_text,
         re.IGNORECASE,
     )
@@ -218,7 +227,7 @@ def _strip_segment_boilerplate(text: str) -> str:
         text = re.sub(r'^[\s:\-]+', '', text)
 
     # Final guard: discard segments that are too short to be real answers.
-    if len(text.strip()) < 100:
+    if len(text.strip()) < 60:
         return ""
 
     return text
@@ -369,7 +378,6 @@ def segment_answers(raw_text: str, expected_labels: Optional[List[str]] = None) 
     accepted = []          # (answer_start_char, line_start_char, canonical_label)
     unlabeled = []         # (answer_start_char, line_start_char) for bare QUESTION blocks
     used = set()
-    last_order = -1
 
     for line_start, answer_start, label in markers:
         if label == "__UNLABELED__":
@@ -379,17 +387,14 @@ def segment_answers(raw_text: str, expected_labels: Optional[List[str]] = None) 
             mapped = _map_to_expected(label, expected_index)
             if mapped is None:
                 continue                      # not a real question — ignore
-            order = expected_index[mapped]
         else:
             mapped = label
-            order = _numeric_key(label)
 
-        # First occurrence only + monotonic (guards against list items that
+        # First occurrence only (guards against list items that
         # repeat an earlier number deeper inside an answer body).
-        if mapped in used or order < last_order:
+        if mapped in used:
             continue
         used.add(mapped)
-        last_order = order
         accepted.append((line_start, answer_start, mapped))
 
     # Infer labels for unlabeled QUESTION blocks from document order.
@@ -399,11 +404,9 @@ def segment_answers(raw_text: str, expected_labels: Optional[List[str]] = None) 
             if idx >= len(unmatched):
                 break
             mapped = unmatched[idx]
-            order = expected_index[mapped]
-            if mapped in used or order < last_order:
+            if mapped in used:
                 continue
             used.add(mapped)
-            last_order = order
             accepted.append((line_start, answer_start, mapped))
 
     # Build segments between consecutive accepted markers.
@@ -424,6 +427,14 @@ def segment_answers(raw_text: str, expected_labels: Optional[List[str]] = None) 
             else:
                 segments[label] = text
         if segments:
+            # Post-validation: if heuristic segmentation missed too many
+            # expected labels, fall back to the LLM which is more reliable
+            # for messy handwritten scripts.
+            if expected_index is not None and len(expected_index) > 1:
+                missing = [lbl for lbl in expected_index if lbl not in segments or not segments[lbl].strip()]
+                if len(missing) > len(expected_index) / 2:
+                    print(f"[SEGMENT] Heuristic missed {len(missing)}/{len(expected_index)} labels, falling back to LLM")
+                    return intelligent_segmentation_fallback(raw_text, merged_labels if merged_labels else expected_labels)
             return segments
 
     # No usable markers found ------------------------------------------------
