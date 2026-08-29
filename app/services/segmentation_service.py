@@ -12,6 +12,30 @@ client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "dummy-key"))
 # removes the run-to-run drift that previously made batches non-deterministic.
 _LLM_SEED = 42
 
+# Phrases that are never part of a real student answer. If a segment starts
+# with any of these, the leading boilerplate is stripped so the embedding
+# model only sees the actual answer text.
+_BOILERPLATE_PREFIXES = [
+    'write legible',
+    'begin each answer',
+    'cross out rough work',
+    'in your own interest',
+    'supplementary books',
+    'answer books used',
+    'write on both sides',
+    'for examiner',
+    'question no.',
+    'candidate',
+    'examination (insert',
+    'title of course',
+    'signature',
+    'semester',
+    'date of exam',
+    'do not write in either margin',
+    'write on both sides of the paper',
+    'write the number of the question',
+]
+
 # ---------------------------------------------------------------------------
 # Marker grammar
 # ---------------------------------------------------------------------------
@@ -78,6 +102,42 @@ def _strip_exam_header(raw_text: str) -> str:
         return raw_text[m.end():]
 
     return raw_text
+
+
+def _strip_segment_boilerplate(text: str) -> str:
+    """
+    Strip leading exam boilerplate from a segment so only the actual student
+    answer remains. Handles cases where the marker captured header text like
+    'Write on both sides of the paper' or 'Do not write in either margin'
+    before the real answer started.
+    """
+    if not text:
+        return text
+
+    # Find the earliest position of any known boilerplate phrase
+    lower = text.lower()
+    cut = len(text)
+    for phrase in _BOILERPLATE_PREFIXES:
+        idx = lower.find(phrase)
+        if idx != -1 and idx < cut:
+            cut = idx
+
+    if cut < len(text):
+        # Keep only what comes after the last boilerplate occurrence
+        # (in case multiple phrases appear, we cut at the last one)
+        last = max(lower.rfind(p) for p in _BOILERPLATE_PREFIXES if lower.find(p) != -1)
+        if last != -1:
+            # Find the end of that phrase
+            for p in _BOILERPLATE_PREFIXES:
+                if lower[last:last+len(p)] == p:
+                    cut = last + len(p)
+                    break
+        stripped = text[cut:].strip()
+        # Remove leading dashes, colons, newlines left after cutting
+        stripped = re.sub(r'^[\s:\-]+', '', stripped)
+        return stripped
+
+    return text
 
 
 _ATTEMPTED_LIST_RE = re.compile(
@@ -269,29 +329,11 @@ def segment_answers(raw_text: str, expected_labels: Optional[List[str]] = None) 
             text = raw_text[answer_start:end].strip()
             if not text:
                 continue
-            # Skip segments that are clearly exam boilerplate / header text
-            # rather than student answers. Typical header lines are short and
-            # contain known direction phrases.
-            if len(text) < 60:
-                lower = text.lower()
-                if any(phrase in lower for phrase in [
-                    'write legible',
-                    'begin each answer',
-                    'cross out rough work',
-                    'in your own interest',
-                    'supplementary books',
-                    'answer books used',
-                    'write on both sides',
-                    'for examiner',
-                    'question no.',
-                    'candidate',
-                    'examination (insert',
-                    'title of course',
-                    'signature',
-                    'semester',
-                    'date of exam',
-                ]):
-                    continue
+            # Strip leading exam boilerplate that may have been captured
+            # between the marker and the actual student answer.
+            text = _strip_segment_boilerplate(text)
+            if not text:
+                continue
             if label in segments:
                 segments[label] = f"{segments[label]}\n{text}".strip()
             else:

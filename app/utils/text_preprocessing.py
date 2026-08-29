@@ -23,14 +23,43 @@ def clean_ocr_output(raw: str) -> str:
 def extract_student_id(text: str) -> str:
     """
     Attempts to extract a Nigerian University Matriculation Number or Student ID
-    from the raw OCR text. Typical formats: 21/04CS023, 19/MAC/011, IFS/20/4986, etc.
+    from the raw OCR text. Handles common OCR errors and spacing variations.
+    Typical formats: IFS/24/9293, IFS/20/4986, IFS12419279, 1FS/24/9293, etc.
     """
-    # Regex for standard matric numbers: optional prefix, digits/letters separated by slashes
-    # Updated pattern to include department prefixes like "IFS", "CSC", etc.
-    pattern = re.compile(r'(?i)(?:matric|id|no\.?)?\s*[:\-]*\s*((?:[a-z]{2,5}/)?[0-9]{2,4}/[a-z]{2,5}/[0-9]{3,4}|[a-z]{2,5}/[0-9]{2}/[0-9]{3,4}|[0-9]{2}/[a-z0-9]+)')
-    match = pattern.search(text)
-    if match:
-        return match.group(1).upper()
+    if not text:
+        return "UNKNOWN"
+
+    # Normalize: uppercase, collapse spaces around separators
+    normalized = text.upper()
+    normalized = re.sub(r'\s*/\s*', '/', normalized)  # "I FS / 24 / 92" -> "I FS/24/92"
+    normalized = re.sub(r'\s+', ' ', normalized)      # collapse multiple spaces
+
+    # Pattern 1: standard slash-separated format
+    # e.g. IFS/24/9293, IFS/20/4986, CSC/21/1234
+    pattern1 = re.compile(
+        r'(?:MATRIC|ID|NO\.?|NUMBER)?\s*[:\-]?\s*'
+        r'((?:[A-Z]{2,5}/)?\d{2,4}/[A-Z]{2,5}/\d{3,6})'
+    )
+    # Pattern 2: no-slash format (e.g. IFS12419279)
+    pattern2 = re.compile(
+        r'(?:MATRIC|ID|NO\.?|NUMBER)?\s*[:\-]?\s*'
+        r'([A-Z]{2,5}\d{6,10})'
+    )
+    # Pattern 3: simple numeric with optional prefix (e.g. 21/04CS023)
+    pattern3 = re.compile(
+        r'(?:MATRIC|ID|NO\.?|NUMBER)?\s*[:\-]?\s*'
+        r'(\d{2}/[A-Z0-9]+)'
+    )
+
+    for pattern in [pattern1, pattern2, pattern3]:
+        match = pattern.search(normalized)
+        if match:
+            raw_id = match.group(1)
+            # Fix common OCR errors
+            raw_id = raw_id.replace(' ', '')           # remove any remaining spaces
+            raw_id = re.sub(r'^1([A-Z])', r'I\1', raw_id)  # leading 1 -> I
+            return raw_id
+
     return "UNKNOWN"
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
