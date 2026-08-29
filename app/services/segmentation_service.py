@@ -34,6 +34,15 @@ _BOILERPLATE_PREFIXES = [
     'do not write in either margin',
     'write on both sides of the paper',
     'write the number of the question',
+    'both sides',
+    'fresh page',
+    'top of each page',
+    'rough work',
+    'examiner',
+    'supplementary',
+    'directions to candidates',
+    'write on both side',
+    'of the paper',
 ]
 
 # ---------------------------------------------------------------------------
@@ -76,25 +85,40 @@ _LEADING_MARKER = re.compile(
 def _strip_exam_header(raw_text: str) -> str:
     """
     Remove FUTA exam header boilerplate that appears before student answers.
-    Strips everything up to and including the 'For Examiner's use only' block
-    or the 'NUMBERS OF THE ANSWERS' block so that numbered directions like
-    '1. Write legible...' are never mistaken for question markers.
+    Uses a two-pass approach:
+      1. Try to find a strong answer marker (QUESTION, Q<n>, Answer <n>) and
+         keep everything from the first such marker onward.
+      2. Fallback: strip through 'For Examiner's use only' block or
+         'NUMBERS OF THE ANSWERS' block.
     """
     if not raw_text:
         return raw_text
 
-    # Try to find "For Examiner's use only" and strip through the next blank line
+    # Pass 1: find first strong student-answer marker and strip everything before it.
+    marker = re.search(
+        r'(?:^|\n\s*)(?:QUESTION\s*\d|Q\s*\d{1,2}(?:[a-z])?\s*[.)]|ANSWER\s*\d)',
+        raw_text,
+        re.IGNORECASE,
+    )
+    if marker:
+        start = marker.start()
+        if start > 0 and raw_text[start] == '\n':
+            start += 1
+        return raw_text[start:]
+
+    # Pass 2: try "For Examiner's use only" through next blank line or until
+    # a strong student-answer marker appears after it.
     m = re.search(
-        r'For Examiner\'s use only.*?(?:\n\s*\n|\Z)',
+        r'For Examiner\'s use only(.*?)(?:\n\s*\n|\n(?=\s*(?:QUESTION|Q\s*\d|ANSWER))|\Z)',
         raw_text,
         re.IGNORECASE | re.DOTALL,
     )
     if m:
         return raw_text[m.end():]
 
-    # Try to find "NUMBERS OF THE ANSWERS" and strip through the attempted list
+    # Pass 3: try "NUMBERS OF THE ANSWERS" through attempted list
     m = re.search(
-        r'NUMBERS OF THE ANSWERS[^\n]*\n(?:[^\n]*\n)?\s*[0-9]+(?:\s+[0-9]+)*\s*\n?',
+        r'NUMBERS OF THE ANSWERS[^\n]*\n(?:[^\n]*\n)?\s*[0-9]+(?:\s+[0-9]+)*\s*(?:\n|$)',
         raw_text,
         re.IGNORECASE,
     )
@@ -102,6 +126,63 @@ def _strip_exam_header(raw_text: str) -> str:
         return raw_text[m.end():]
 
     return raw_text
+
+
+def _scrub_boilerplate_lines(raw_text: str) -> str:
+    """
+    Remove individual lines that are clearly exam header/boilerplate.
+    This runs AFTER _strip_exam_header() to catch any remaining direction
+    lines, table rows, or header fragments that the block stripper missed.
+    """
+    if not raw_text:
+        return raw_text
+
+    # Patterns for lines that should be completely removed
+    boilerplate_line_patterns = [
+        r'^\s*DIRECTIONS TO CANDIDATES\s*$',
+        r'^\s*NUMBERS OF THE ANSWERS.*$',
+        r'^\s*For Examiner\'s use only.*$',
+        r'^\s*Question No\.\s*Mark\s*$',
+        r'^\s*\d+\s+\d+\s*$',  # attempted list like "2  4  5"
+        r'^\s*Candidate.*Number.*$',
+        r'^\s*EXAMINATION.*$',
+        r'^\s*Title of Course.*$',
+        r'^\s*Date of Exam.*$',
+        r'^\s*Semester.*$',
+        r'^\s*Signature.*$',
+        r'^\s*FEDERAL UNIVERSITY.*$',
+        r'^\s*Write legible.*$',
+        r'^\s*Begin each answer.*$',
+        r'^\s*Cross out rough work.*$',
+        r'^\s*In your own interest.*$',
+        r'^\s*If supplementary books.*$',
+        r'^\s*In no circumstance.*$',
+        r'^\s*Write the number of the question.*$',
+        r'^\s*Do not write in either margin.*$',
+        r'^\s*Write on both sides? of the paper.*$',
+        r'^\s*Write on both side of the paper.*$',
+        r'^\s*of the paper\.?\s*$',
+        r'^\s*on both sides of the paper.*$',
+        r'^\s*on a fresh page.*$',
+        r'^\s*at the top of each page.*$',
+    ]
+
+    lines = raw_text.splitlines(keepends=True)
+    cleaned = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            cleaned.append(line)
+            continue
+        is_boilerplate = False
+        for pattern in boilerplate_line_patterns:
+            if re.match(pattern, stripped, re.IGNORECASE):
+                is_boilerplate = True
+                break
+        if not is_boilerplate:
+            cleaned.append(line)
+
+    return ''.join(cleaned)
 
 
 def _strip_segment_boilerplate(text: str) -> str:
@@ -114,28 +195,31 @@ def _strip_segment_boilerplate(text: str) -> str:
     if not text:
         return text
 
-    # Find the earliest position of any known boilerplate phrase
     lower = text.lower()
-    cut = len(text)
+
+    # Find boilerplate phrases near the start of the segment and cut them out.
+    # We look for phrases within the first 200 chars and cut from the start
+    # of the first phrase to the end of the last phrase (in case multiple
+    # boilerplate lines were captured).
+    cut_start = None
+    cut_end = 0
     for phrase in _BOILERPLATE_PREFIXES:
         idx = lower.find(phrase)
-        if idx != -1 and idx < cut:
-            cut = idx
+        if idx != -1 and idx < 200:
+            if cut_start is None or idx < cut_start:
+                cut_start = idx
+            end_pos = idx + len(phrase)
+            if end_pos > cut_end:
+                cut_end = end_pos
 
-    if cut < len(text):
-        # Keep only what comes after the last boilerplate occurrence
-        # (in case multiple phrases appear, we cut at the last one)
-        last = max(lower.rfind(p) for p in _BOILERPLATE_PREFIXES if lower.find(p) != -1)
-        if last != -1:
-            # Find the end of that phrase
-            for p in _BOILERPLATE_PREFIXES:
-                if lower[last:last+len(p)] == p:
-                    cut = last + len(p)
-                    break
-        stripped = text[cut:].strip()
+    if cut_start is not None and cut_start < 200:
+        text = text[cut_end:].strip()
         # Remove leading dashes, colons, newlines left after cutting
-        stripped = re.sub(r'^[\s:\-]+', '', stripped)
-        return stripped
+        text = re.sub(r'^[\s:\-]+', '', text)
+
+    # Final guard: discard segments that are too short to be real answers.
+    if len(text.strip()) < 100:
+        return ""
 
     return text
 
@@ -266,6 +350,7 @@ def segment_answers(raw_text: str, expected_labels: Optional[List[str]] = None) 
     """
     raw_text = raw_text or ""
     raw_text = _strip_exam_header(raw_text)
+    raw_text = _scrub_boilerplate_lines(raw_text)
     expected_index = None
     merged_labels = list(expected_labels or [])
 

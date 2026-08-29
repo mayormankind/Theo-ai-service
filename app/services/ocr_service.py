@@ -60,45 +60,54 @@ def image_bytes_to_base64(image_bytes: bytes) -> str:
     return base64.b64encode(image_bytes).decode('utf-8')
 
 
-def extract_page_text(image_bytes: bytes) -> str:
+def extract_page_text(image_bytes: bytes, max_retries: int = 3) -> str:
     """
-    Extract text from a single image using 
-    GPT-4o-mini Vision.
+    Extract text from a single image using GPT-4o-mini Vision.
     Returns the transcribed text string.
+    Handles rate limits (429) with exponential backoff.
     """
     base64_image = image_bytes_to_base64(image_bytes)
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": TRANSCRIPTION_PROMPT
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}",
-                                "detail": "high"
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": TRANSCRIPTION_PROMPT
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}",
+                                    "detail": "high"
+                                }
                             }
-                        }
-                    ]
-                }
-            ],
-            temperature=0.0,
-            # Fixed seed reduces run-to-run transcription drift, which in turn
-            # keeps segmentation and scores stable when a script is re-graded.
-            seed=7,
-        )
-        return response.choices[0].message.content.strip()
+                        ]
+                    }
+                ],
+                temperature=0.0,
+                seed=7,
+            )
+            return response.choices[0].message.content.strip()
 
-    except Exception as e:
-        print(f"[OCR] GPT-4o-mini extraction failed: {e}")
-        return ""
+        except Exception as e:
+            error_str = str(e)
+            if "rate_limit" in error_str.lower() or "429" in error_str:
+                wait_time = min(2 ** attempt, 8)  # 1s, 2s, 4s, then cap at 8s
+                print(f"[OCR] Rate limited (attempt {attempt+1}/{max_retries}), waiting {wait_time}s before retry...")
+                import time
+                time.sleep(wait_time)
+            else:
+                print(f"[OCR] GPT-4o-mini extraction failed: {e}")
+                return ""
+    
+    print(f"[OCR] GPT-4o-mini extraction failed after {max_retries} retries (rate limit)")
+    return ""
 
 
 def process_file_to_images(
@@ -174,6 +183,12 @@ def extract_text_hybrid(
                     f"[PAGE {i + 1} EXTRACTION FAILED - "
                     f"please review original script]"
                 )
+
+        # Small delay between pages to avoid hitting OpenAI's
+        # tokens-per-minute (TPM) rate limit.
+        if i + 1 < len(image_bytes_list):
+            import time
+            time.sleep(0.5)
 
     full_text = "\n\n".join(extracted_pages)
     
