@@ -69,22 +69,23 @@ def normalize_matric(raw: str) -> str | None:
     )
     candidate = m.group(1).strip() if m else raw.strip()
 
-    # 2. Strip spaces around separators
-    candidate = re.sub(r'\s*/\s*', '/', candidate)
-    candidate = re.sub(r'\s+', '', candidate)
+    # 2. Strip spaces around separators and collapse spaces
+    cleaned = re.sub(r'\s*/\s*', '/', candidate)
+    cleaned = re.sub(r'\s+', '', cleaned)
 
     # 3. Try slash-separated first
-    slash_parts = candidate.split('/')
+    slash_parts = cleaned.split('/')
     parsed = _try_split_slashes(slash_parts)
     if not parsed:
         # 4. Try concatenated form
-        parsed = _try_split_no_slashes(candidate)
+        parsed = _try_split_no_slashes(cleaned)
 
-    if not parsed:
-        return None
+    if parsed:
+        dept, year, serial = parsed
+        return f"{dept}/{year}/{serial}"
 
-    dept, year, serial = parsed
-    return f"{dept}/{year}/{serial}"
+    # 5. Fallback: return the raw candidate text so the lecturer can edit it
+    return candidate.strip() or None
 
 
 def extract_matric(text: str) -> str | None:
